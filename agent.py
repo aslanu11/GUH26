@@ -132,6 +132,13 @@ class Agent:
         self.claim_t = {}
         self.last_why = {}
         self.my_reason = {}
+        # LLM brain (robot, optional): decides next action among options the rule allows
+        self.brain = None
+        self.brain_busy = False
+        self.brain_result = None
+        self.brain_wait_until = 0.0
+        self.brain_waits = 0
+        self.brain_last = {"source": "rule", "reasoning": "LLM brain off: using the reflex rule", "say": "", "t": 0}
         self._dwell_zone, self._dwell_since = None, 0.0
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -175,6 +182,8 @@ class Agent:
             "zone": getattr(self.ex, "zone", None),
             "cycle": round(self.cycle_est, 2),
             "n": self.n_picks,
+            "say": self.brain_last.get("say", "") if self.kind == "robot" else "",
+            "say_t": self.brain_last.get("t", 0),
         }
 
     # ---------------- networking ----------------
@@ -378,23 +387,86 @@ class Agent:
             sign = 1 if self.kind == "human" else -1   # human: lightest first, robot: heaviest first
             now = time.time()
             mine = sorted(self.ordered_pids(), key=lambda p: (not self.reg(p).get("skip"), sign * self.weight_of(p)))
-            for pid in mine:
-                if self.orders[pid.rsplit(":", 1)[0]].get("start_at", 0) > now:
-                    continue   # countdown: let the human read their picks first
-                if self.last_assign.get(pid) == self.me:
-                    self.my_reason[pid] = self.last_why.get(pid, "")
-                    self.claim_t[pid] = time.time()
-                    skip = self.reg(pid).get("skip")
-                    self.write(pid, "claimed", self.me, **({"skip": skip} if skip else {}))
-                    self.busy_pid = pid
-                    self.target_slot = self.slot_of(pid)
-                    self.abort_flag = False
-                    self.say(f"claimed slot {self.target_slot} ({self.my_reason[pid]})")
-                    if self.kind == "robot":
-                        threading.Thread(target=self._robot_run, args=(pid,), daemon=True).start()
-                    else:
-                        self._assign_human(self.target_slot)
-                    break
+            options = [p for p in mine if self.orders[p.rsplit(":", 1)[0]].get("start_at", 0) <= now
+                       and self.last_assign.get(p) == self.me]   # countdown: wait until the order starts
+            if options:
+                if self.kind == "robot" and self.brain:
+                    self._brain_step(options, now)
+                else:
+                    self._claim(options[0], self.last_why.get(options[0], ""))
+
+    def _claim(self, pid, reason):
+        self.my_reason[pid] = reason
+        self.claim_t[pid] = time.time()
+        skip = self.reg(pid).get("skip")
+        self.write(pid, "claimed", self.me, **({"skip": skip} if skip else {}))
+        self.busy_pid = pid
+        self.target_slot = self.slot_of(pid)
+        self.abort_flag = False
+        self.say(f"claimed slot {self.target_slot} ({reason})")
+        if self.kind == "robot":
+            threading.Thread(target=self._robot_run, args=(pid,), daemon=True).start()
+        else:
+            self._assign_human(self.target_slot)
+
+    # ---------------- LLM brain (robot) ----------------
+    def _brain_context(self, options):
+        human = {}
+        for a, ps in self.peer_status.items():
+            if self.cfg["agents"][a]["kind"] == "human":
+                st = self.last_view.get(a, {})
+                human = {"state": st.get("state"), "available": st.get("available"),
+                         "hand_zone": ps["status"].get("zone"), "working_on_slot": ps["status"].get("target"),
+                         "learned_pick_time_s": round(self.cycle_of(a), 1)}
+        board = [{"slot": self.slot_of(p), "weight": self.weight_of(p), "status": self.reg(p)["status"],
+                  "owner": self.reg(p)["owner"]} for p in self.ordered_pids()]
+        opts = [{"pick": p, "slot": self.slot_of(p), "weight": self.weight_of(p),
+                 "rule_says": self.last_why.get(p, "")} for p in options]
+        return {"my_options": opts, "human": human, "board": board,
+                "my_learned_pick_time_s": round(self.cycle_est, 1),
+                "recent_events": list(self.log)[:6]}
+
+    def _brain_step(self, options, now):
+        res = self.brain_result
+        if res is not None:
+            self.brain_result = None
+            if res.get("action") == "claim" and res.get("pick") in options:
+                self.brain_waits = 0
+                self.brain_last = {"source": res.get("source", "claude"), "reasoning": res.get("reasoning", ""),
+                                   "say": res.get("say", ""), "t": time.time(), "ms": res.get("ms")}
+                self.say(f"brain ({res.get('ms')} ms): {res.get('reasoning')}")
+                if res.get("say"):
+                    self.say(f"robot says: {res['say']}")
+                self._claim(res["pick"], "LLM: " + res.get("reasoning", ""))
+                return
+            if res.get("action") == "wait" and self.brain_waits < 2:
+                self.brain_waits += 1
+                self.brain_wait_until = now + 3.0
+                self.brain_last = {"source": res.get("source", "claude"), "reasoning": "waiting: " + res.get("reasoning", ""),
+                                   "say": res.get("say", ""), "t": time.time(), "ms": res.get("ms")}
+                self.say(f"brain says wait: {res.get('reasoning')}")
+                return
+            # fallback: LLM unreachable / invalid / waited too long -> reflex rule
+            why = res.get("error") or ("waited twice" if res.get("action") == "wait" else f"invalid pick {res.get('pick')}")
+            self.brain_waits = 0
+            self.brain_last = {"source": "rule", "reasoning": f"reflex rule (LLM: {why})", "say": "", "t": time.time()}
+            self.say(f"brain unavailable ({why}) - reflex rule")
+            self._claim(options[0], self.last_why.get(options[0], "") + " [reflex]")
+            return
+        if self.brain_busy or now < self.brain_wait_until:
+            return
+        self.brain_busy = True
+        ctx = self._brain_context(options)
+
+        def ask():
+            try:
+                r = self.brain.decide(ctx)
+            except Exception as e:
+                r = {"action": "fallback", "error": str(e)[:120]}
+            self.brain_result = r
+            self.brain_busy = False
+
+        threading.Thread(target=ask, daemon=True).start()
 
     # ---------------- robot body ----------------
     def should_pause(self):
@@ -588,6 +660,10 @@ class Agent:
             "human_max_weight": self.cfg["human_max_weight"],
             "slots": sorted(int(s) for s in self.cfg["slots"]),
             "danger": self.danger, "robot_target": self.robot_target,
+            "brain": dict(self.brain_last, on=bool(self.brain), calls=getattr(self.brain, "calls", 0)) if self.kind == "robot" else None,
+            "robot_says": next((ps["status"].get("say") for a, ps in self.peer_status.items()
+                                if self.cfg["agents"][a]["kind"] == "robot" and ps["status"].get("say")
+                                and time.time() - ps["status"].get("say_t", 0) < 20), "") if self.kind == "human" else "",
             "countdown": max([0.0] + [o.get("start_at", 0) - time.time() for o in self.orders.values()]),
             "my_picks": [{"slot": self.slot_of(p), "weight": self.weight_of(p)} for p in
                          sorted(self.ordered_pids(), key=lambda p: self.weight_of(p) * (1 if self.kind == "human" else -1))
@@ -737,6 +813,9 @@ def main():
     ap.add_argument("--cam", type=int, help="camera index: hand tracking (--arm hand) or Tier 2 motion watcher")
     ap.add_argument("--roi", help="camera region x,y,w,h covering the human arm")
     ap.add_argument("--watch", default="human", help="which peer the camera watches")
+    ap.add_argument("--llm", action="store_true", help="robot: Claude decides the next action (needs ANTHROPIC_API_KEY)")
+    ap.add_argument("--llm-model", default=None, help="Claude model id (default in brain.py)")
+    ap.add_argument("--llm-mock", action="store_true", help="robot: offline stand-in brain, for testing the wiring")
     ap.add_argument("--view", help="camera stream to show on this page (display only), e.g. http://127.0.0.1:8001/video")
     args = ap.parse_args()
 
@@ -765,6 +844,11 @@ def main():
 
     agent = Agent(cfg, args.id, args.port, [parse_addr(p) for p in args.peer], ex, watcher, args.watch)
     agent.view_url = args.view
+    if kind == "robot" and (args.llm or args.llm_mock):
+        from brain import Brain
+        agent.brain = Brain(model=args.llm_model, mock=args.llm_mock)
+        agent.brain_last = {"source": "claude", "reasoning": "LLM brain on: waiting for the first decision", "say": "", "t": 0}
+        agent.say(f"LLM brain ON ({'mock' if args.llm_mock else agent.brain.model})")
     for f in (agent.send_loop, agent.recv_loop, agent.tick_loop):
         threading.Thread(target=f, daemon=True).start()
     agent.say(f"{kind} agent up. UDP :{args.port} peers {args.peer}  page http://localhost:{args.web}")

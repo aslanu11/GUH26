@@ -83,6 +83,13 @@ Both pages show the overhead camera (zone boxes, fingertip, the robot's current 
 Robot page: **http://localhost:8000** · human page: **http://localhost:8001**. Put them side by side. Each shows what *that* agent believes.
 Type orders like `1,2,3,4,5` on either one. Use **Reset run** after restocking the slots.
 
+**LLM brain (optional):** set your Claude key, then add `--llm` to the robot command:
+```
+$env:ANTHROPIC_API_KEY = "sk-ant-..."
+python agent.py --id robot ... --llm
+```
+Claude decides the robot's next action among the options the shared rule allows (it can't break the weight limit or the hand pause), explains why on the robot page, and can talk to the human (blue banner on the human page). If Claude is slow or unreachable, the robot instantly falls back to its reflex rule: the LLM link is just another comms link. Never commit the key.
+
 **Kill an agent in the demo:** close Terminal 1 (the robot's brain dies). Within about 6 s the human page shows the robot **down** and takes the light picks; heavy ones show "blocked: needs a robot". Re-run the Terminal 1 command and it rejoins and merges.
 
 **Fake mode** (no hardware): leave out `--arm`. Leave out `--arm so101 --arm-port` for a pretend robot, or `--arm hand --cam` for a pretend human.

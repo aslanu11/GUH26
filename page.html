@@ -17,6 +17,7 @@
 <h1 id="title">agent</h1><div class="sub" id="sub"></div>
 <div id="overlay" style="display:none;position:fixed;inset:0;z-index:10;align-items:center;justify-content:center;flex-direction:column;text-align:center;font-weight:800"></div>
 <style>@keyframes flash{0%,100%{background:#ffd600;color:#111}50%{background:#111;color:#ffd600}} #overlay.on{display:flex !important;animation:flash .8s step-end infinite}</style>
+<div id="robotsays" style="display:none;background:#1565c0;color:#fff;font-size:22px;font-weight:600;padding:12px 16px;border-radius:8px;margin-bottom:12px"></div>
 <div id="handoff" style="display:none;background:#ff6d00;color:#111;font-size:26px;font-weight:700;padding:14px 18px;border-radius:8px;margin-bottom:12px"></div>
 <div id="danger" style="display:none;background:#b00020;color:#fff;font-size:26px;font-weight:700;padding:14px 18px;border-radius:8px;margin-bottom:12px"></div>
 <div class="row">
@@ -98,6 +99,16 @@ async function refresh(){
       : `<div style="font-size:40px">ROBOT PICKS (heaviest first)</div><div style="font-size:120px;letter-spacing:8px">${picks || 'none'}</div><div style="font-size:36px">Starting in ${Math.ceil(S.countdown)} s</div>`;
     ov.classList.add('on'); if (S.kind === 'human') beep();
   } else ov.classList.remove('on');
+  const rs = document.getElementById('robotsays');
+  if (S.kind === 'human' && S.robot_says) { rs.style.display = 'block'; rs.textContent = 'Robot: ' + S.robot_says; } else rs.style.display = 'none';
+  if (S.kind === 'robot' && S.brain) {
+    const b = S.brain;
+    h = `<div style="margin-top:10px;padding:10px;border:2px solid ${b.source==='claude'?'#7b1fa2':'#888'};border-radius:8px">
+      <b>Robot brain:</b> ${b.on ? (b.source==='claude' ? 'Claude' : (b.source==='mock' ? 'mock' : 'reflex rule (fallback)')) : 'off (reflex rule)'}
+      ${b.ms ? `<span class="muted">· ${b.ms} ms</span>` : ''} <span class="muted">· ${b.calls||0} calls</span><br>
+      <span style="font-size:16px">${esc(b.reasoning)}</span>${b.say ? `<br><i>Says to human: "${esc(b.say)}"</i>` : ''}</div>`;
+    document.getElementById('mine').insertAdjacentHTML('beforeend', h);
+  }
   const ho = document.getElementById('handoff');
   if (S.handoff && S.handoff.length) {
     ho.style.display = 'block';
