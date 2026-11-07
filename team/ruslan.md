@@ -1,11 +1,11 @@
 # Ruslan: human agent (real hand)
 You own (with Tanish): `human_hand.py`, `regions.json`. You're also **the human in the demo**: you pick with your own hand.
 
-The **overhead camera is plugged into KAZY's laptop** (it runs both agents). Edit `human_hand.py` on your Mac with your AI and push;
-run the camera steps on Kazy's laptop (`git pull` first). On a Mac use `python3` / `pip3`.
+The **overhead camera is plugged into ASLAN's laptop** (it runs both agents). Edit `human_hand.py` on your Mac with your AI and push;
+run the camera steps on Aslan's laptop (`git pull` first). On a Mac use `python3` / `pip3`.
 
 ## Tasks, in order
-1. [ ] On Kazy's laptop: `pip install -r requirements.txt` (adds mediapipe + opencv)
+1. [ ] On Aslan's laptop: `pip install -r requirements.txt` (adds mediapipe + opencv)
 2. [ ] `python human_hand.py cams` → find the overhead camera index (N)
 3. [ ] **After the layout is taped and the camera mounted**: `python human_hand.py regions --cam N`. Drag one box per zone: 1, 2, 3, 4, 5, tray, reject. Make each slot box cover where your FINGERTIP goes when you grab that object
 4. [ ] `python human_hand.py watch --cam N` → a red dot on your index fingertip, and the zone box goes green when you're in it ✅ **2:30**

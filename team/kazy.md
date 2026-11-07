@@ -1,5 +1,5 @@
 # Kazy: robot arm (laptop 1)
-You own: `robot_arm.py`, `motions/`. **Your laptop runs BOTH agents** (two terminals, see README "Run for real"). The follower and the overhead camera both plug into it. Run `pip3 install -r requirements.txt` to get mediapipe. **You're on a Mac:** `python3`, port `/dev/tty.usbmodemXXXX`, allow Terminal camera access the first time.
+You own: `robot_arm.py`, `motions/`. **The follower plugs into ASLAN's laptop** (it runs both agents). Do the teaching there: you move the arm, type the keys there. Run `pip3 install -r requirements.txt` to get mediapipe. **You're on a Mac:** `python3`, port `/dev/tty.usbmodemXXXX`, allow Terminal camera access the first time.
 
 ## Tasks, in order
 1. [ ] Note the follower's USB port, then **close MakerMods Lab** (it holds the port). `pip install -r requirements.txt`

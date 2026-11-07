@@ -38,13 +38,14 @@ Each agent sends its full state (orders, pick records, status) over UDP to its p
 The **interfaces between files** are written at the top of each file. Don't change an interface without telling its owner in Discord.
 
 ## Which laptop does what (ONE laptop for the demo)
-**Kazy's laptop (a MacBook) runs both agents** as two separate processes in two terminals. On the Mac: use `python3`/`pip3`, the arm port looks like `/dev/tty.usbmodemXXXX`, and allow Terminal camera access (System Settings → Privacy & Security → Camera). If pip refuses ("externally managed"): `python3 -m venv .venv`, then `source .venv/bin/activate`, then `pip install -r requirements.txt`. The follower arm and the overhead camera are both plugged into it.
+**Aslan's laptop (Windows) runs both agents** as two separate processes in two terminals. Mac users (Ruslan, Ayman, Kazy): use `python3`/`pip3`, ports look like `/dev/tty.usbmodemXXXX`.
 The agents still share nothing but UDP messages on `127.0.0.1`: no shared memory, no shared files, no broker. Each one decides for itself.
 
 | Laptop | Use |
 |---|---|
-| **Kazy's** (MacBook) | Robot agent + human agent, follower arm + overhead camera |
-| Aslan's, Tanish's (Windows) | Development, fake-mode testing, backup demo laptop |
+| **Aslan's** (Windows) | Robot agent + human agent, follower arm + overhead camera |
+| Tanish's (Windows) | Backup demo laptop, fake-mode testing |
+| Kazy's (MacBook) | Teaching help, fake-mode tests |
 | Ruslan's, Ayman's (MacBooks) | Editing, fake-mode tests, pitch |
 
 **Pitch framing:** "Each agent is an independent process with its own sensors and state. For the demo they share a laptop; in a warehouse each runs on its own device. The code is identical: only the peer IP changes."
@@ -58,7 +59,7 @@ python test_scenarios.py
 ```
 `test_scenarios.py` runs a fake robot + fake human and checks every demo moment, no hardware. It must print `ALL PASS`.
 
-## Run for real (Kazy's laptop, two terminals)
+## Run for real (Aslan's laptop, two terminals)
 **Close MakerMods Lab first**: only one program can use the arm's port. Run `pip install -r requirements.txt` once (adds mediapipe).
 
 One-time setup:
