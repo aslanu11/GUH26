@@ -4,8 +4,8 @@
 
 A mini Amazon pick station run by **two independent agents with no central controller**:
 
-- **Robot agent** (Kazy's laptop): the SO-101 follower picks objects with its gripper. It has the overhead camera.
-- **Human agent** (Aslan's laptop): a person (Ruslan in the demo) uses the SO-101 **leader arm as a tracked tool** to push objects into the tray. The leader's encoders tell the system exactly where the human's arm is. **Teleop is OFF: the leader never drives the follower.**
+- **Robot agent** (Kazy's laptop): the SO-101 follower picks objects with its gripper, fully autonomously (taught picks replayed when the agent decides). It has its wrist camera.
+- **Human agent** (Aslan's laptop): a real person (Ruslan in the demo) picks with **their own hand**. The **overhead camera** (plugged into Aslan's laptop) tracks the hand with MediaPipe and knows which slot it's in. A hand resting in a slot, then leaving, counts as a pick. The leader arm isn't used (`human_leader.py` stays as a fallback).
 
 Each object sits in a numbered slot and carries a **post-it weight label from 1 (light) to 5 (heavy)**. Both agents run the **same rule** (distance + weight + queue) on their own copy of the order board, so they agree who picks what without negotiating. **Labels above 3 are robot-only**, for human safety.
 
@@ -14,8 +14,8 @@ Each object sits in a numbered slot and carries a **post-it weight label from 1 
 |---|---|
 | Normal order | Picks split between robot and human; heavy ones always go to the robot |
 | Human takes the robot's item (e.g. spots a damaged package and bins it) | Robot sees it in the shared state, drops that pick and replans |
-| Human's arm enters the robot's slot | Robot **pauses** and resumes when the arm leaves (speed-and-separation monitoring, ISO/TS 15066) |
-| Human walks away | Leader stops moving → human agent marks itself away → robot takes the light picks |
+| Human's hand enters the robot's slot | Robot **pauses** and resumes when the arm leaves (speed-and-separation monitoring, ISO/TS 15066) |
+| Human walks away | No hand seen for 12 s → human agent marks itself away → robot takes the light picks |
 | Pull the robot's power | Robot agent releases its pick → human gets the light ones; heavy ones show **"blocked: needs a robot"** and are never given to the human |
 | Cut comms (button or wifi off) | Each agent keeps working from its own view. Tier 2: the robot's overhead camera tells "human cut off but working" from "human gone" |
 | Reconnect | Boards merge (CRDT), nothing gets done twice |
@@ -29,8 +29,9 @@ Each agent sends its full state (orders, pick records, status) over UDP to its p
 | `agent.py`, `page.html`, `servo_bus.py` | **Aslan** | Agent core, web page, raw servo driver (shared) |
 | `config.json` | **Aslan** (Tanish supplies the numbers) | Slot weights, distances, timings |
 | `robot_arm.py`, `motions/` | **Kazy** | Teach and replay the follower's picks |
-| `human_leader.py`, `zones.json` | **Ruslan** | Leader-arm tracking (zones, trigger, idle) |
-| `vision.py` | **Tanish** | Overhead camera motion detection (Tier 2) |
+| `human_hand.py`, `regions.json` | **Ruslan + Tanish** | Real-hand tracking with the overhead camera (MediaPipe) |
+| `human_leader.py` | Ruslan | Fallback: leader arm as a tracked tool (not used by default) |
+| `vision.py` | **Tanish** | Tier 2 motion watcher (crashed vs cut off) |
 | `test_scenarios.py`, `docs/` | **Ayman** | Automated scenario tests, demo script, pitch |
 | `team/<name>.md` | each person | Your task list. Your AI reads this first |
 
@@ -39,12 +40,12 @@ The **interfaces between files** are written at the top of each file. Don't chan
 ## Which laptop does what
 | Laptop | Runs | Plugged in |
 |---|---|---|
-| **Kazy's** (Windows) | Robot agent | Follower arm + overhead camera |
-| **Aslan's** (Windows) | Human agent | Leader arm |
+| **Kazy's** (Windows) | Robot agent | Follower arm (+ its wrist camera) |
+| **Aslan's** (Windows) | Human agent | Overhead camera (tracks the human's hand) |
 | **Tanish's** (Windows) | Spare / backup (later: a simulated 3rd agent) | none |
 | Ruslan's, Ayman's (MacBooks) | Editing, fake-mode tests, pitch | none |
 
-**Mac users:** everything works the same, but type `python3` / `pip3`. Arm ports look like `/dev/tty.usbmodemXXXX`. Ruslan edits `human_leader.py` on his Mac and pushes; Aslan pulls and runs it with the leader plugged in.
+**Mac users:** everything works the same, but type `python3` / `pip3`. Arm ports look like `/dev/tty.usbmodemXXXX`. Ruslan and Tanish edit `human_hand.py`; Aslan pulls and runs it with the overhead camera plugged in.
 
 ## Setup (every laptop). Windows PowerShell: run ONE line at a time, no `&&`
 ```
@@ -64,12 +65,13 @@ python robot_arm.py ports                                   # find the follower'
 python robot_arm.py teach --port COM5 --name home           # once
 python robot_arm.py teach --port COM5 --name 1              # ...one per slot, 1-5
 python agent.py --id robot --port 9100 --peer <ASLAN_IP>:9101 --arm so101 --arm-port COM5
-#   Tier 2: add  --cam 1 --roi x,y,w,h   (from python vision.py roi --cam 1)
 ```
-**Aslan's laptop, human agent (Ruslan operates the leader):**
+**Aslan's laptop, human agent (Ruslan's real hand):**
 ```
-python human_leader.py teach --port COM6                    # home, 1-5, tray, reject
-python agent.py --id human --port 9101 --peer <KAZY_IP>:9100 --arm leader --arm-port COM6
+python human_hand.py cams                                   # find the overhead camera index
+python human_hand.py regions --cam 1                        # draw a box over slots 1-5, tray, reject
+python human_hand.py watch --cam 1                          # check the hand dot + zone are right
+python agent.py --id human --port 9101 --peer <KAZY_IP>:9100 --arm hand --cam 1
 ```
 Open **http://localhost:8000** on each laptop and put them side by side. Each page shows what *that* agent believes. Type orders like `1,2,3,4,5` on either one. Use **Reset run** after restocking the slots.
 
@@ -77,7 +79,7 @@ Open **http://localhost:8000** on each laptop and put them side by side. Each pa
 
 ## Rules (don't break these, the judges will check)
 - **Nothing central**: no single laptop running both arms, no MQTT broker, no cloud AI making decisions
-- **Each agent has its own sensors**: overhead camera → robot laptop; leader encoders → human laptop
+- **Each agent has its own sensors**: overhead camera → human laptop (tracks the hand); arm encoders + wrist camera → robot laptop
 - **Never move the taped layout after teaching**: the taught picks assume exact slot positions
 - **Foam under the follower before pulling its power**: it drops when power is cut
 
@@ -86,7 +88,7 @@ Open **http://localhost:8000** on each laptop and put them side by side. Each pa
 |---|---|
 | 1:45 | Layout taped down (Tanish) |
 | 2:15 | Follower replays one pick (Kazy) · both agents talking over the hotspot (Aslan) |
-| 2:30 | Leader zones detected live (Ruslan + Aslan, on Aslan's laptop) |
+| 2:30 | Hand zones detected live on Aslan's laptop (Ruslan + Tanish) |
 | 3:30 | Full run on real hardware |
 | 4:00 | Tier 2 (camera) only if everything above works |
 | **4:45** | **Freeze.** Three full runs, film the best one (Ayman) |

@@ -1,16 +1,18 @@
-# Ruslan: human agent (leader arm)
-You own: `human_leader.py`, `zones.json`. You're also **the human in the demo**.
+# Ruslan: human agent (real hand)
+You own (with Tanish): `human_hand.py`, `regions.json`. You're also **the human in the demo**: you pick with your own hand.
 
-**The leader is plugged into ASLAN's laptop** (yours is a Mac). Write and edit `human_leader.py` on your Mac with your AI, push, then run the hardware steps below on Aslan's laptop (`git pull` first). On a Mac, use `python3`.
+The **overhead camera is plugged into ASLAN's laptop**. Edit `human_hand.py` on your Mac with your AI and push;
+run the camera steps on Aslan's laptop (`git pull` first). On a Mac use `python3` / `pip3`.
 
 ## Tasks, in order
-1. [ ] Plug the leader into Aslan's laptop (it needs its own power supply). `pip install -r requirements.txt`
-2. [ ] `python human_leader.py ports` → find the port (unplug/replug to see which one disappears)
-3. [ ] **After the layout is taped**: `python human_leader.py teach --port <PORT>`. For each zone (home, 1-5, tray, reject bin), put the leader's handle where you'd use it, then Enter
-4. [ ] `python human_leader.py watch --port <PORT>`. Move between zones and check the right name shows. Squeeze the trigger in a slot: you should see `CLICK in 3`. ✅ **2:30**
-5. [ ] If zones get confused, raise or lower `THRESHOLD_TICKS`, or re-teach one: `--only 3,tray`
-6. [ ] With Aslan: run the agent with `--arm leader --arm-port <PORT>`
-7. [ ] Practise the demo: do your assigned pick (push the object into the tray with the leader, squeeze the trigger), "steal" the robot's pick, put the leader into the robot's slot (the robot should pause), walk away (leader still for 12 s)
+1. [ ] On Aslan's laptop: `pip install -r requirements.txt` (adds mediapipe + opencv)
+2. [ ] `python human_hand.py cams` → find the overhead camera index (N)
+3. [ ] **After the layout is taped and the camera mounted**: `python human_hand.py regions --cam N`. Drag one box per zone: 1, 2, 3, 4, 5, tray, reject. Make each slot box cover where your FINGERTIP goes when you grab that object
+4. [ ] `python human_hand.py watch --cam N` → a red dot on your index fingertip, and the zone box goes green when you're in it ✅ **2:30**
+5. [ ] If zones get missed: redraw the boxes bigger, improve the lighting, keep sleeves out of shot
+6. [ ] With Aslan: run the agent with `--arm hand --cam N`
+7. [ ] Practise the demo: rest your hand in your assigned slot ~1 s and lift the item into the tray; "steal" the robot's item; put your hand in the robot's slot (robot pauses); walk away (no hand for 12 s)
 
-## How the agent counts a human pick
-Trigger squeeze while in a slot zone **or** staying in a slot zone ≥ 0.6 s and then leaving. There's also a manual "I took slot N" button on the page as a backup.
+## How a human pick counts
+Fingertip inside a slot box for ≥ 0.6 s (`dwell_s` in config.json) and then leaving. The page also has "I took slot N" buttons as a backup.
+Passing over a slot quickly doesn't count. Resting your hand in a slot without taking anything DOES count, so don't do that.

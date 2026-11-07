@@ -581,12 +581,14 @@ def main():
     ap.add_argument("--port", type=int, default=9100, help="UDP port this agent listens on")
     ap.add_argument("--peer", action="append", default=[], help="peer address host:port (repeatable)")
     ap.add_argument("--web", type=int, default=8000, help="web page port")
-    ap.add_argument("--arm", default="fake", choices=["fake", "so101", "leader"])
+    ap.add_argument("--arm", default="fake", choices=["fake", "so101", "hand", "leader"],
+                    help="robot: fake|so101   human: fake|hand (camera tracks a real hand)|leader (fallback)")
     ap.add_argument("--arm-port", help="serial port of the arm, e.g. /dev/ttyACM0 or COM5")
     ap.add_argument("--arm-id", help="unused for now (kept for a LeRobot backend)")
     ap.add_argument("--motions", default="motions", help="folder of taught robot motions")
-    ap.add_argument("--zones", default="zones.json", help="taught leader zones file")
-    ap.add_argument("--cam", type=int, help="overhead camera index (robot agent, Tier 2)")
+    ap.add_argument("--zones", default="zones.json", help="taught leader zones file (leader fallback)")
+    ap.add_argument("--regions", default="regions.json", help="camera zone boxes for --arm hand")
+    ap.add_argument("--cam", type=int, help="camera index: hand tracking (--arm hand) or Tier 2 motion watcher")
     ap.add_argument("--roi", help="camera region x,y,w,h covering the human arm")
     ap.add_argument("--watch", default="human", help="which peer the camera watches")
     args = ap.parse_args()
@@ -598,13 +600,17 @@ def main():
     elif args.arm == "so101":
         from robot_arm import FollowerReplay
         ex = FollowerReplay(args.arm_port, args.arm_id, args.motions)
+    elif args.arm == "hand":
+        from human_hand import HandTracker
+        ex = HandTracker(args.cam if args.cam is not None else 0, args.regions)
+        ex.start()
     else:
         from human_leader import LeaderTracker
         ex = LeaderTracker(args.arm_port, args.arm_id, args.zones)
         ex.start()
 
     watcher = None
-    if args.cam is not None:
+    if args.cam is not None and args.arm != "hand":
         from vision import MotionWatcher
         roi = tuple(int(x) for x in args.roi.split(",")) if args.roi else None
         watcher = MotionWatcher(args.cam, roi)

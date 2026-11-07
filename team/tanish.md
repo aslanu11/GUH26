@@ -1,11 +1,11 @@
 # Tanish: layout, objects, camera
-You own: `vision.py`. You supply the numbers for `config.json` (send them to Aslan). Your laptop is the **spare**: use it to develop `vision.py` with the camera, then the camera moves to Kazy's laptop for the real run.
+You own: `vision.py`, and `human_hand.py` together with Ruslan. You supply the numbers for `config.json` (send them to Aslan).
 
 ## Tasks, in order
-1. [ ] Tape down **5 slots and one long tray** within reach of BOTH arms. The robot drops at its end of the tray and the human at theirs. Add a **reject bin** for "damaged" items
-2. [ ] Put a **post-it weight label (1-5)** on each object. Objects must fit the follower's gripper. Make the slot number match the label (slot 4 holds the weight-4 object) unless Aslan changes config
-3. [ ] ✅ **1:45: layout taped. Nobody moves it after this.** Kazy and Ruslan teach positions against it
-4. [ ] Measure in cm: follower base → each slot, and leader base → each slot. Send them to Aslan for `config.json` (`"dist": {"robot": .., "human": ..}`)
-5. [ ] Mount the overhead camera (into Kazy's laptop) so it sees the slots, the tray and the leader arm
-6. [ ] Tier 2: `python vision.py list` → `python vision.py roi --cam N` (draw a box around the leader arm's area) → `python vision.py watch --cam N --roi ...` → tune `THRESH` so moving the leader shows `moving=True` and still shows `False`
-7. [ ] Help Ayman with the pitch and slides once the camera works
+1. [ ] Tape down **5 slots and one long tray** within reach of the follower (see the layout picture in Discord). Add a **reject bin** for "damaged" items. Tape an outline around each object so it goes back in the same place
+2. [ ] Put a **post-it weight label (1-5)** on top of each object (slot number = label). Objects must fit the follower's gripper
+3. [ ] ✅ **1:45: layout taped. Nobody moves it after this.** Kazy teaches the robot's picks against it
+4. [ ] Measure in cm: follower base → each slot, and where the human stands → each slot. Send to Aslan for `config.json`
+5. [ ] Mount the overhead camera **into Aslan's laptop**, looking straight down so all 5 slots, the tray and the reject bin are in view, with the human's hand visible as it reaches in
+6. [ ] With Ruslan: `python human_hand.py regions --cam N` then `watch` (see team/ruslan.md). Tune `FINGERTIP` / box sizes until zones are reliable
+7. [ ] Help Ayman with the pitch once the hand tracking works

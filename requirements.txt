@@ -1,3 +1,4 @@
 feetech-servo-sdk
 pyserial
-opencv-python   # only needed for vision.py (Tier 2)
+opencv-python   # camera: human_hand.py, vision.py
+mediapipe       # hand tracking: human_hand.py (human agent laptop only)
