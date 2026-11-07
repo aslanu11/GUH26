@@ -165,7 +165,11 @@ def teach(port, name, motions_dir):
     while True:
         cmd = input(f"[{len(wps)} waypoints] > ").strip().lower()
         if cmd in ("", "g"):
-            pos = bus.read_positions()
+            try:
+                pos = bus.read_positions()
+            except IOError as e:
+                print(f"  !! {e}\n  Check the arm's power and the servo cables, then try again. Your {len(wps)} waypoints are kept.")
+                continue
             wp = {"pos": pos, "grip": cmd == "g"}
             if cmd == "g" and wps:  # squeeze further in the closing direction
                 direction = 1 if pos["gripper"] >= wps[-1]["pos"]["gripper"] else -1
@@ -184,6 +188,10 @@ def teach(port, name, motions_dir):
             print("  previewing..."), play(bus, home + wps + home)
             input("  done. Hold the arm, then press Enter to turn torque OFF")
             bus.torque(False)
+        elif cmd == "w" and wps:  # emergency save without preview
+            Path(motions_dir).mkdir(exist_ok=True)
+            (Path(motions_dir) / f"{name}.json").write_text(json.dumps(wps, indent=1))
+            print("  saved (no preview)")
         elif cmd == "s" and wps:
             Path(motions_dir).mkdir(exist_ok=True)
             p = Path(motions_dir) / f"{name}.json"

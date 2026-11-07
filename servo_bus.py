@@ -44,7 +44,7 @@ class Bus:
         self.lock = threading.Lock()
         self.sw = GroupSyncWrite(self.port, self.ph, ADDR_GOAL_POSITION, 2)
 
-    def read_positions(self, retries=2):
+    def read_positions(self, retries=5):
         out = {}
         with self.lock:
             for name in JOINTS:
@@ -53,6 +53,7 @@ class Bus:
                     if res == COMM_SUCCESS:
                         out[name] = _decode(val)
                         break
+                    time.sleep(0.01)
                     if attempt == retries:
                         raise IOError(f"no reply from servo {IDS[name]} ({name}) - power off or cable out?")
         return out
