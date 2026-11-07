@@ -34,6 +34,7 @@ GRIPPER_TICKS_S = 900
 MIN_SEGMENT_S = 0.4
 GRASP_SQUEEZE = 100     # extra ticks past contact so the grasp actually holds
 GRASP_DWELL_S = 0.4
+RELEASE_TICKS = 300   # opening the gripper more than this after a grasp = release
 HZ = 50
 
 
@@ -54,8 +55,26 @@ def full_path(motions_dir, slot):
         return wps
 
 
+def hold_grip(waypoints):
+    """After a GRASP waypoint, keep the squeezed gripper value until the gripper is clearly opened.
+    (When teaching, your hand lets go of the jaws after 'g', so later waypoints record a looser grip.)"""
+    out, hold = [], None
+    for wp in waypoints:
+        wp = {"pos": dict(wp["pos"]), "grip": wp.get("grip", False)}
+        if wp["grip"]:
+            hold = wp["pos"]["gripper"]
+        elif hold is not None:
+            if abs(wp["pos"]["gripper"] - hold) < RELEASE_TICKS:
+                wp["pos"]["gripper"] = hold      # still carrying the object: keep squeezing
+            else:
+                hold = None                      # gripper opened = released
+        out.append(wp)
+    return out
+
+
 def play(bus, waypoints, should_pause=lambda: False, should_abort=lambda: False):
     """Interpolate through waypoints. Abort is honoured until the first grasp, then we retrace home."""
+    waypoints = hold_grip(waypoints)
     cur = bus.read_positions()
     prev = {"pos": cur, "grip": False}
     visited, grasped = [prev], False
