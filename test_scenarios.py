@@ -60,6 +60,8 @@ def main():
         st = statuses(R)
         ok &= wait(lambda: st[4]["owner"] == "robot" and st[5]["owner"] == "robot", 1, "weights 4-5 done by robot")
         ok &= wait(lambda: any(r["owner"] == "human" for r in st.values()), 1, "human did at least one pick")
+        ok &= wait(lambda: state(H)["learned"]["robot"]["n"] >= 1 and state(R)["learned"]["human"]["n"] >= 1, 3,
+                   "each agent learned the other's pick time")
 
         print("2. Robot arm fails: light picks go to human, heavy ones blocked")
         post(R, "/reset")

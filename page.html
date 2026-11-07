@@ -48,7 +48,8 @@ async function refresh(){
   try { S = await (await fetch('/state')).json(); } catch(e){ return; }
   document.title = S.me + ' agent';
   document.getElementById('title').textContent = `${S.me.toUpperCase()} agent (${S.kind})`;
-  document.getElementById('sub').textContent = `run ${S.epoch} · human weight limit: ${S.human_max_weight}`;
+  const L = Object.entries(S.learned||{}).map(([a,x]) => `${a} ${x.cycle}s/pick (${x.n} picks)`).join(' · ');
+  document.getElementById('sub').textContent = `run ${S.epoch} · human weight limit: ${S.human_max_weight} · learned: ${L}`;
   // my card
   let h = '';
   if (S.kind === 'human') {
@@ -75,11 +76,11 @@ async function refresh(){
     p += `<tr><td>${esc(a)}</td><td class="${cls}">${esc(x.state)}${x.available===false?' · unavailable':''}</td><td>${esc(S.peer_zone[a] ?? '')}</td></tr>`; }
   document.getElementById('peers').innerHTML = p + '</table>';
   // picks
-  let t = '<tr><th>order</th><th>slot</th><th>weight</th><th>status</th><th>who</th></tr>';
+  let t = '<tr><th>order</th><th>slot</th><th>weight</th><th>status</th><th>who</th><th>why</th></tr>';
   for (const r of S.rows) {
     let who = r.status==='pending' ? (r.assigned ? `→ ${r.assigned}` : `<span class="warn">${esc(r.reason)}</span>`) : esc(r.owner || r.by);
     if (r.status==='claimed') who = esc(r.owner);
-    t += `<tr><td>${esc(r.pid.split(':')[0])}</td><td>${r.slot}</td><td>${r.weight}</td><td class="s-${r.status}">${r.status}</td><td>${who}</td></tr>`; }
+    t += `<tr><td>${esc(r.pid.split(':')[0])}</td><td>${r.slot}</td><td>${r.weight}</td><td class="s-${r.status}">${r.status}</td><td>${who}</td><td class="muted" style="font-size:12px">${esc(r.why ?? '')}</td></tr>`; }
   document.getElementById('picks').innerHTML = t;
   document.getElementById('log').textContent = S.log.join('\n');
   const d = document.getElementById('danger');

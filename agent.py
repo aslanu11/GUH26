@@ -122,6 +122,12 @@ class Agent:
         self.danger = None              # human agent: {"slot": n} while the hand is in the robot's slot
         self.robot_target = None        # human agent: where the robot is working (from its heartbeat)
         self.view_url = None            # camera stream shown on this agent's page
+        # learned teammate model: my own measured time per pick (EMA), shared in my heartbeat
+        self.cycle_est = float(cfg["agents"][me]["cycle_s"])
+        self.n_picks = 0
+        self.claim_t = {}
+        self.last_why = {}
+        self.my_reason = {}
         self._dwell_zone, self._dwell_since = None, 0.0
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -157,6 +163,8 @@ class Agent:
             "busy": self.busy_pid,
             "target": self.target_slot,
             "zone": getattr(self.ex, "zone", None),
+            "cycle": round(self.cycle_est, 2),
+            "n": self.n_picks,
         }
 
     # ---------------- networking ----------------
@@ -243,16 +251,35 @@ class Agent:
         return v
 
     # ---------------- the shared rule: distance + weight + queue ----------------
+    def cycle_of(self, a):
+        """Learned seconds-per-pick for agent a: mine is measured here, theirs comes from their heartbeat."""
+        if a == self.me:
+            return self.cycle_est
+        ps = self.peer_status.get(a)
+        return float(ps["status"].get("cycle", self.cfg["agents"][a]["cycle_s"])) if ps else float(self.cfg["agents"][a]["cycle_s"])
+
+    def learn(self, pid):
+        """A pick I claimed is done: update my seconds-per-pick estimate (exponential moving average)."""
+        t0 = self.claim_t.pop(pid, None)
+        if t0 is None:
+            return
+        dt = min(60.0, max(1.0, time.time() - t0))
+        a = self.cfg.get("learn_alpha", 0.4)
+        old = self.cycle_est
+        self.cycle_est = (1 - a) * self.cycle_est + a * dt
+        self.n_picks += 1
+        self.say(f"learned: that pick took {dt:.1f}s -> my pick time {old:.1f}s -> {self.cycle_est:.1f}s")
+
     def cost(self, a, slot, queue):
         ag, s = self.cfg["agents"][a], self.cfg["slots"][str(slot)]
-        c = s["dist"][a] / ag["speed"] + queue[a] * ag["cycle_s"]
+        c = s["dist"][a] / ag["speed"] + queue[a] * self.cycle_of(a)
         if ag["kind"] == "human":
             c += self.cfg["weight_cost_k"] * s["weight"]
         return c
 
     def allocate(self, v):
         c = self.cfg
-        assign, reasons = {}, {}
+        assign, reasons, why = {}, {}, {}
         queue = {a: 0 for a in c["agents"]}
         for pid in self.ordered_pids():
             r = self.reg(pid)
@@ -265,18 +292,28 @@ class Agent:
                 continue
             if r["status"] == "claimed" and r["owner"] in v and v[r["owner"]]["alive"]:
                 assign[pid] = r["owner"]
+                why[pid] = self.my_reason.get(pid, f"claimed by {r['owner']}") if r["owner"] == self.me else f"claimed by {r['owner']}"
                 continue
             slot = self.slot_of(pid)
             weight = c["slots"][str(slot)]["weight"]
             among = orders[pid.rsplit(":", 1)[0]]["among"]
-            cands = []
+            cands, excluded = [], []
             for a, ag in c["agents"].items():
                 x = v[a]
-                if not (x["alive"] and x["available"] and (x["fresh"] or a in among)):
+                if not x["alive"]:
+                    excluded.append(f"{a} down")
+                    continue
+                if not x["available"]:
+                    excluded.append(f"{a} unavailable")
+                    continue
+                if not (x["fresh"] or a in among):
+                    excluded.append(f"{a} cut off")
                     continue
                 if slot not in ag["reach"]:
+                    excluded.append(f"{a} can't reach")
                     continue
                 if ag["kind"] == "human" and weight > c["human_max_weight"]:
+                    excluded.append(f"{a}: weight {weight} > limit {c['human_max_weight']}")
                     continue
                 cands.append(a)
             if not cands:
@@ -284,10 +321,13 @@ class Agent:
                 heavy = weight > c["human_max_weight"]
                 reasons[pid] = f"blocked: weight {weight} needs a robot" if heavy else "blocked: no agent available"
                 continue
-            best = min(cands, key=lambda a: (self.cost(a, slot, queue), KIND_RANK[c["agents"][a]["kind"]], a))
+            costs = {a: self.cost(a, slot, queue) for a in cands}
+            best = min(cands, key=lambda a: (costs[a], KIND_RANK[c["agents"][a]["kind"]], a))
             assign[pid] = best
+            parts = [f"{a} {costs[a]:.1f}" for a in sorted(cands, key=lambda a: costs[a])]
+            why[pid] = f"{best}: score " + " vs ".join(parts) + ("; " + ", ".join(excluded) if excluded else "")
             queue[best] += 1
-        return assign, reasons
+        return assign, reasons, why
 
     # ---------------- decision loop ----------------
     def tick_loop(self):
@@ -299,7 +339,7 @@ class Agent:
     def tick(self):
         v = self.view()
         self.last_view = v
-        self.last_assign, self.last_reasons = self.allocate(v)
+        self.last_assign, self.last_reasons, self.last_why = self.allocate(v)
 
         # my current pick got done by someone else, or my claim was overridden -> drop it
         if self.busy_pid and not self.abort_flag:
@@ -319,11 +359,13 @@ class Agent:
         if self.busy_pid is None and self.available and getattr(self.ex, "arm_ok", True):
             for pid in self.ordered_pids():
                 if self.last_assign.get(pid) == self.me:
+                    self.my_reason[pid] = self.last_why.get(pid, "")
+                    self.claim_t[pid] = time.time()
                     self.write(pid, "claimed", self.me)
                     self.busy_pid = pid
                     self.target_slot = self.slot_of(pid)
                     self.abort_flag = False
-                    self.say(f"claimed slot {self.target_slot}")
+                    self.say(f"claimed slot {self.target_slot} ({self.my_reason[pid]})")
                     if self.kind == "robot":
                         threading.Thread(target=self._robot_run, args=(pid,), daemon=True).start()
                     else:
@@ -367,6 +409,7 @@ class Agent:
             if res == "ok":
                 self.write(pid, "done", self.me)
                 self.say(f"done slot {slot}")
+                self.learn(pid)
             elif res == "empty":
                 self.write(pid, "missing", self.me)
                 self.say(f"slot {slot} was empty")
@@ -404,6 +447,7 @@ class Agent:
         note = "" if prev_owner in (None, self.me) else f" (was {prev_owner}'s)"
         self.say(f"human took slot {slot}{note}")
         if pid == self.busy_pid:
+            self.learn(pid)
             self.busy_pid = None
             self._assign_human(None)
 
@@ -488,6 +532,7 @@ class Agent:
                 "pid": pid, "slot": slot, "weight": self.cfg["slots"][str(slot)]["weight"],
                 "status": r["status"], "owner": r["owner"], "by": r["w"],
                 "assigned": self.last_assign.get(pid), "reason": self.last_reasons.get(pid),
+                "why": self.last_why.get(pid),
             })
         my_next = None
         if self.busy_pid:
@@ -502,6 +547,9 @@ class Agent:
             "human_max_weight": self.cfg["human_max_weight"],
             "slots": sorted(int(s) for s in self.cfg["slots"]),
             "danger": self.danger, "robot_target": self.robot_target,
+            "learned": {a: {"cycle": round(self.cycle_of(a), 1),
+                            "n": self.n_picks if a == self.me else (self.peer_status.get(a, {}).get("status", {}).get("n", 0))}
+                        for a in self.cfg["agents"]},
             "view_url": self.view_url or ("/video" if hasattr(self.ex, "jpeg") else None),
             "fake": type(self.ex).__name__.startswith("Fake"),
             "walked_away": getattr(self.ex, "paused", False),

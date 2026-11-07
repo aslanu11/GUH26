@@ -6,6 +6,7 @@
   "down_s": 6.0,
   "away_s": 12.0,
   "dwell_s": 0.6,
+  "learn_alpha": 0.4,
   "agents": {
     "robot": {"kind": "robot", "speed": 10.0, "cycle_s": 10.0, "reach": [1, 2, 3, 4, 5]},
     "human": {"kind": "human", "speed": 15.0, "cycle_s": 6.0, "reach": [1, 2, 3, 4, 5]}
