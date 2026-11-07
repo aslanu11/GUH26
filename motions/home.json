@@ -1,0 +1,13 @@
+[
+ {
+  "pos": {
+   "shoulder_pan": 826,
+   "shoulder_lift": 970,
+   "elbow_flex": 2678,
+   "wrist_flex": 3180,
+   "wrist_roll": 1048,
+   "gripper": 2058
+  },
+  "grip": false
+ }
+]
