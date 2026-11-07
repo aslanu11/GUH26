@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>KitMesh stations</title>
+<style>
+  :root { color-scheme: light; --ink: #1c1915; --line: #d9d1c4; --paper: #f6f1e8; --card: #fffdf8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); }
+  header, main { padding: 16px 20px; }
+  header { background: #24211d; color: #f6f1e8; }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  h2 { margin: 0; font-size: 18px; }
+  p { margin: 6px 0; }
+  .banner { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: #3a342c; }
+  .banner.warn { background: #6e2e1e; }
+  .banner.ok { background: #1d4a32; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  button, select { font: inherit; border: 1px solid #8c8274; background: #fff; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+  button.primary { background: #1d4a32; color: white; border-color: #1d4a32; }
+  button.danger { background: #6e2e1e; color: white; border-color: #6e2e1e; }
+  button.operator { background: #8a4b12; color: white; border-color: #8a4b12; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; margin-right: 6px; background: #ece4d6; }
+  .pill.bad { background: #f0c7b8; }
+  .pill.good { background: #cfe6d6; }
+  .pill.stale { background: #f3dd9a; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 13px; }
+  tr.differ { background: #fff4d6; }
+  .sim { color: #1d4a32; font-weight: 650; }
+  .human { color: #8a4b12; font-weight: 650; }
+  .review { color: #6e2e1e; font-weight: 650; }
+  .log { max-height: 220px; overflow: auto; font-family: ui-monospace, monospace; font-size: 12px; }
+  .log div { padding: 3px 0; border-bottom: 1px solid #eee; }
+  .error { color: #6e2e1e; min-height: 1.2em; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>KitMesh fulfilment</h1>
+  <p>Two stations, direct peer communication, one shared view. This page does not assign tasks.</p>
+  <div id="banner" class="banner">Waiting for stations…</div>
+  <div class="controls">
+    <button class="primary" id="submit-demo">Submit demo order</button>
+    <button id="submit-waiting">Submit unshared S3 order</button>
+    <button class="danger" id="partition">Block communication</button>
+    <button id="reconnect">Restore communication</button>
+    <button id="hold">Hold Station A’s next pick</button>
+    <button id="release-hold">Release Station A’s next pick</button>
+    <button class="danger" id="stop-a">Stop Station A</button>
+    <button id="resume-a">Resume Station A</button>
+    <button class="danger" id="stop-b">Stop Station B</button>
+    <button id="resume-b">Resume Station B</button>
+  </div>
+  <p class="error" id="error"></p>
+</header>
+<main>
+  <div class="grid" id="columns"></div>
+  <p>Operator confirmations stay labelled as operator actions. A robot task is verified only when Isaac Sim reports the parcel released by suction and settled in its carton. A missed heartbeat does not move ownership.</p>
+</main>
+<script>
+const DEMO = [
+  {cube_id: "parcel-S1", stock_id: "S1", zone_id: "ZA"},
+  {cube_id: "parcel-S2", stock_id: "S2", zone_id: "ZA"},
+  {cube_id: "parcel-S4", stock_id: "S4", zone_id: "ZB"}
+];
+const WAITING = [{cube_id: "parcel-S3", stock_id: "S3", zone_id: "ZB"}];
+const $ = (id) => document.getElementById(id);
+let last = null;
+
+function badge(task) {
+  if (task.verification === "simulation") return '<span class="sim">Verified in simulation</span>';
+  if (task.verification === "operator") return '<span class="human">Operator confirmed — not simulation</span>';
+  if (task.state === "Needs review") return '<span class="review">Needs review</span>';
+  return task.state;
+}
+
+function actions(record, task) {
+  if (!record || record.offline) return "";
+  const buttons = [];
+  const station = record.station;
+  if (task.offer && task.offer.to === station) {
+    buttons.push(`<button data-act="accept" data-station="${station}" data-task="${task.task_id}">Accept handover</button>`);
+  }
+  if (task.owner === station && task.eligible_handover_to && !task.offer && (task.state === "Pending" || (task.state === "Blocked" && task.reason === "execution stopped"))) {
+    buttons.push(`<button data-act="offer" data-station="${station}" data-task="${task.task_id}" data-to="${task.eligible_handover_to}">Offer to other station</button>`);
+  }
+  if (record.role === "operator" && task.owner === station && task.state === "Pending" && task.established && !task.offer) {
+    buttons.push(`<button class="operator" data-act="begin" data-station="${station}" data-task="${task.task_id}">Begin operator pick</button>`);
+  }
+  if (record.role === "operator" && task.owner === station && task.state === "In progress") {
+    buttons.push(`<button class="operator" data-act="confirm" data-station="${station}" data-task="${task.task_id}">Operator confirms completion</button>`);
+    buttons.push(`<button data-act="uncertain" data-station="${station}" data-task="${task.task_id}">Mark uncertain</button>`);
+  }
+  return buttons.join(" ");
+}
+
+function column(record, differ) {
+  if (!record || record.offline) {
+    return `<section class="card"><h2>Station offline</h2><p>${record && record.error ? record.error : "No status"}</p></section>`;
+  }
+  const age = record.peer_heartbeat_age_s;
+  const stale = record.partitioned || !record.peer_connected || age == null || age > 2.5;
+  const sim = record.simulator || {};
+  const link = record.partitioned ? "communication blocked" : (record.peer_connected ? "peer connected" : "peer disconnected");
+  const rows = (record.tasks || []).map((task) => {
+    const mark = differ.includes(task.task_id) ? "differ" : "";
+    const offer = task.offer ? `Offer open to ${task.offer.to}. Neither station should execute it.` : "";
+    return `<tr class="${mark}">
+      <td>${task.cube_id}<br>${task.stock_id} → ${task.zone_id}<br><small>${task.established ? "shared" : "not shared yet"}</small></td>
+      <td>${task.owner || "—"}<br>${offer}</td>
+      <td>${badge(task)}<br><small>${task.reason || ""}</small></td>
+      <td>${actions(record, task)}</td>
+    </tr>`;
+  }).join("");
+  const events = (record.events || []).slice(0, 12).map((event) => `<div>${event.ts.slice(11, 19)} ${event.kind}: ${event.note || ""}</div>`).join("");
+  const cubes = (sim.cubes && Object.entries(sim.cubes).map(([id, cube]) => {
+    const pos = (cube.position || []).map((n) => Number(n).toFixed(3)).join(", ");
+    return `<div>${id}: ${pos}</div>`;
+  }).join("")) || "";
+  return `<section class="card">
+    <h2>${record.label || record.station}</h2>
+    <p>
+      <span class="pill ${record.peer_connected && !record.partitioned ? "good" : "bad"}">${link}</span>
+      <span class="pill ${stale ? "stale" : "good"}">${stale ? "remote record may be stale" : "peer heartbeat fresh"} ${age == null ? "" : "(" + age.toFixed(1) + "s)"}</span>
+      <span class="pill">${record.execution_enabled ? "execution on" : "execution stopped"}</span>
+      <span class="pill">${record.hold_next ? "next robot pick held" : "robot queue running"}</span>
+    </p>
+    <p>Local record. ${record.role === "operator" ? "Human confirmations are not physics results." : "Robot completions require an Isaac Sim pose check."}</p>
+    <table>
+      <thead><tr><th>Task</th><th>Owner</th><th>State</th><th></th></tr></thead>
+      <tbody>${rows || "<tr><td colspan='4'>No tasks in this local record</td></tr>"}</tbody>
+    </table>
+    <h3>Event history</h3>
+    <div class="log">${events || "<div>No events</div>"}</div>
+    ${cubes ? `<h3>Latest simulator parcel positions</h3><div class="log">${cubes}</div>` : ""}
+  </section>`;
+}
+
+function render(data) {
+  last = data;
+  const names = Object.keys(data.stations);
+  $("columns").innerHTML = names.map((name) => column(data.stations[name], data.differ || [])).join("");
+  const a = data.stations["station-a"] || {};
+  const sim = a.simulator || {};
+  const banner = $("banner");
+  const parts = [];
+  if (a.partitioned || (data.stations["station-b"] || {}).partitioned) parts.push("Communication between the stations is blocked. The simulator is not paused.");
+  if (data.differ && data.differ.length) parts.push("Highlighted rows differ between the two local records.");
+  if (sim.name === "isaac-sim" && sim.ready) {
+    banner.className = "banner ok";
+    parts.unshift("Isaac Sim is running two UF850 arms with suction. A green “Verified in simulation” line means the parcel was released and settled in its carton.");
+  } else if (sim.name === "stub-sim") {
+    banner.className = "banner warn";
+    parts.unshift("Stub simulator only. Nothing on this page is an Isaac grasp.");
+  } else {
+    banner.className = "banner warn";
+    parts.unshift("Isaac Sim is not connected. Robot picks will not be marked verified.");
+  }
+  banner.textContent = parts.join(" ");
+}
+
+async function api(path, body) {
+  $("error").textContent = "";
+  const response = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+  const payload = await response.json();
+  if (!payload.ok) $("error").textContent = payload.error || "Request failed";
+  await refresh();
+}
+
+async function refresh() {
+  const response = await fetch("/api/snapshot");
+  render(await response.json());
+}
+
+$("submit-demo").onclick = () => api("/api/order", {station: "station-a", lines: DEMO});
+$("submit-waiting").onclick = () => api("/api/order", {station: "station-a", lines: WAITING});
+$("partition").onclick = () => api("/api/partition", {enabled: true});
+$("reconnect").onclick = () => api("/api/partition", {enabled: false});
+$("hold").onclick = () => api("/api/hold", {station: "station-a", enabled: true});
+$("release-hold").onclick = () => api("/api/hold", {station: "station-a", enabled: false});
+$("stop-a").onclick = () => api("/api/execution", {station: "station-a", enabled: false});
+$("resume-a").onclick = () => api("/api/execution", {station: "station-a", enabled: true});
+$("stop-b").onclick = () => api("/api/execution", {station: "station-b", enabled: false});
+$("resume-b").onclick = () => api("/api/execution", {station: "station-b", enabled: true});
+document.body.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-act]");
+  if (!button) return;
+  const station = button.dataset.station;
+  const task = button.dataset.task;
+  const act = button.dataset.act;
+  if (act === "offer") api("/api/handover/offer", {station, task_id: task, to: button.dataset.to});
+  if (act === "accept") api("/api/handover/accept", {station, task_id: task});
+  if (act === "begin") api("/api/operator/begin", {station, task_id: task});
+  if (act === "confirm") api("/api/operator/confirm", {station, task_id: task});
+  if (act === "uncertain") api("/api/operator/uncertain", {station, task_id: task});
+});
+refresh();
+setInterval(refresh, 800);
+</script>
+</body>
+</html>
