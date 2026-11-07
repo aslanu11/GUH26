@@ -1,0 +1,3 @@
+feetech-servo-sdk
+pyserial
+opencv-python   # only needed for vision.py (Tier 2)

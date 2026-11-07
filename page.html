@@ -1,0 +1,78 @@
+<!doctype html>
+<!-- page.html - OWNER: Aslan. Each agent serves this; it shows what THAT agent believes. -->
+<html><head><meta charset="utf-8"><title>agent</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body{font-family:system-ui,sans-serif;margin:16px;background:#fafafa;color:#111}
+  h1{margin:0 0 4px;font-size:22px} .sub{color:#666;margin-bottom:12px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .card{background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px;flex:1;min-width:280px}
+  .big{font-size:28px;font-weight:700} .warn{color:#b00020} .ok{color:#0a7a32} .muted{color:#888}
+  table{border-collapse:collapse;width:100%} td,th{padding:5px 8px;border-bottom:1px solid #eee;text-align:left;font-size:14px}
+  button{padding:8px 12px;margin:3px;border-radius:6px;border:1px solid #888;background:#fff;cursor:pointer;font-size:14px}
+  button.danger{border-color:#b00020;color:#b00020} input{padding:8px;font-size:15px;width:140px}
+  .s-done{color:#0a7a32} .s-claimed{color:#0055cc;font-weight:600} .s-pending{color:#666} .s-missing{color:#b06000}
+  pre{font-size:12px;max-height:220px;overflow:auto;margin:0}
+</style></head><body>
+<h1 id="title">agent</h1><div class="sub" id="sub"></div>
+<div class="row">
+  <div class="card" id="mine"></div>
+  <div class="card"><b>Comms</b><div id="comms" class="big"></div>
+    <button id="cutbtn" class="danger" onclick="post('/comms',{cut:!S.comms_cut})">Cut comms</button>
+    <div id="peers" style="margin-top:8px"></div></div>
+</div>
+<div class="row" style="margin-top:12px">
+  <div class="card"><b>New order</b> (slots, e.g. 1,3,4)<br>
+    <input id="slots" placeholder="1,2,3,4,5"><button onclick="order()">Send order</button>
+    <button onclick="if(confirm('Reset run? (restock all slots first)'))post('/reset',{})">Reset run</button>
+    <div id="msg" class="muted"></div>
+    <table id="picks" style="margin-top:8px"></table></div>
+  <div class="card"><b>Log</b><pre id="log"></pre></div>
+</div>
+<script>
+let S = {};
+async function post(p, b){ const r = await fetch(p,{method:'POST',body:JSON.stringify(b)}); const j = await r.json();
+  document.getElementById('msg').textContent = j.result==='ok' ? '' : j.result; refresh(); }
+function order(){ post('/order',{slots:document.getElementById('slots').value}); }
+function esc(x){ return String(x??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+async function refresh(){
+  try { S = await (await fetch('/state')).json(); } catch(e){ return; }
+  document.title = S.me + ' agent';
+  document.getElementById('title').textContent = `${S.me.toUpperCase()} agent (${S.kind})`;
+  document.getElementById('sub').textContent = `run ${S.epoch} · human weight limit: ${S.human_max_weight}`;
+  // my card
+  let h = '';
+  if (S.kind === 'human') {
+    h += '<b>Your next pick</b><div class="big">' + (S.my_next ? `Slot ${S.my_next.slot} <span class="muted">(weight ${S.my_next.weight})</span>` : '<span class="muted">nothing for you</span>') + '</div>';
+    h += `<div>Leader zone: <b>${esc(S.zone ?? 'between zones')}</b></div>`;
+    h += '<div>I took slot: ' + S.slots.map(s=>`<button onclick="post('/touch',{slot:${s}})">${s}</button>`).join('') + '</div>';
+    if (S.fake) h += `<button onclick="post('/walkaway',{value:${!S.walked_away}})">${S.walked_away?'(sim) come back':'(sim) walk away'}</button>`;
+  } else {
+    h += '<b>Robot</b><div class="big">' + (S.my_next ? `Picking slot ${S.my_next.slot}` : '<span class="muted">idle</span>') + '</div>';
+    if (S.paused) h += '<div class="big warn">PAUSED: human in my slot</div>';
+    h += `<div>Arm: ${S.arm_ok ? '<span class="ok">OK</span>' : '<span class="warn">FAILED</span>'}</div>`;
+    h += `<button onclick="post('/armreset',{})">Reconnect arm</button>`;
+    if (S.fake) h += `<button class="danger" onclick="post('/fail',{})">(sim) pull arm power</button>`;
+  }
+  h += `<div style="margin-top:6px">Me: ${S.available ? '<span class="ok">available</span>' : '<span class="warn">unavailable</span>'}
+        <button onclick="post('/available',{value:${!S.available}})">${S.available?'Mark unavailable':'Mark available'}</button></div>`;
+  document.getElementById('mine').innerHTML = h;
+  // comms + peers
+  document.getElementById('comms').innerHTML = S.comms_cut ? '<span class="warn">CUT</span>' : '<span class="ok">ON</span>';
+  document.getElementById('cutbtn').textContent = S.comms_cut ? 'Restore comms' : 'Cut comms';
+  let p = '<table><tr><th>agent</th><th>my view of it</th><th>zone</th></tr>';
+  for (const [a,x] of Object.entries(S.view)) { if (a===S.me) continue;
+    const cls = x.state==='online' ? 'ok' : (x.alive ? '' : 'warn');
+    p += `<tr><td>${esc(a)}</td><td class="${cls}">${esc(x.state)}${x.available===false?' · unavailable':''}</td><td>${esc(S.peer_zone[a] ?? '')}</td></tr>`; }
+  document.getElementById('peers').innerHTML = p + '</table>';
+  // picks
+  let t = '<tr><th>order</th><th>slot</th><th>weight</th><th>status</th><th>who</th></tr>';
+  for (const r of S.rows) {
+    let who = r.status==='pending' ? (r.assigned ? `→ ${r.assigned}` : `<span class="warn">${esc(r.reason)}</span>`) : esc(r.owner || r.by);
+    if (r.status==='claimed') who = esc(r.owner);
+    t += `<tr><td>${esc(r.pid.split(':')[0])}</td><td>${r.slot}</td><td>${r.weight}</td><td class="s-${r.status}">${r.status}</td><td>${who}</td></tr>`; }
+  document.getElementById('picks').innerHTML = t;
+  document.getElementById('log').textContent = S.log.join('\n');
+}
+setInterval(refresh, 500); refresh();
+</script></body></html>
