@@ -83,7 +83,7 @@ Both pages show the overhead camera (zone boxes, fingertip, the robot's current 
 Robot page: **http://localhost:8000** · human page: **http://localhost:8001**. Put them side by side. Each shows what *that* agent believes.
 Type orders like `1,2,3,4,5` on either one. Use **Reset run** after restocking the slots.
 
-**LLM brain (optional):** set your Claude key, then add `--llm` to the robot command:
+**LLM brains (optional):** set your Claude key, then add `--llm` to the robot AND/OR the human command (two Claude agents that coordinate by message):
 ```
 $env:ANTHROPIC_API_KEY = "sk-ant-..."
 python agent.py --id robot ... --llm

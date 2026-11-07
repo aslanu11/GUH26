@@ -188,7 +188,7 @@ class Agent:
             "zone": getattr(self.ex, "zone", None),
             "cycle": round(self.cycle_est, 2),
             "n": self.n_picks,
-            "say": self.brain_last.get("say", "") if self.kind == "robot" else "",
+            "say": self.brain_last.get("say", ""),
             "say_t": self.brain_last.get("t", 0),
         }
 
@@ -396,7 +396,7 @@ class Agent:
             options = [p for p in mine if self.orders[p.rsplit(":", 1)[0]].get("start_at", 0) <= now
                        and self.last_assign.get(p) == self.me]   # countdown: wait until the order starts
             if options:
-                if self.kind == "robot" and self.brain:
+                if self.brain:
                     self._brain_step(options, now)
                 else:
                     self._claim(options[0], self.last_why.get(options[0], ""))
@@ -416,7 +416,29 @@ class Agent:
             self._assign_human(self.target_slot)
 
     # ---------------- LLM brain (robot) ----------------
+    def peer_says(self):
+        """Latest message from each other agent (sent in its heartbeat), if recent."""
+        out = {}
+        for a, ps in self.peer_status.items():
+            msg = ps["status"].get("say")
+            if msg and time.time() - ps["status"].get("say_t", 0) < 25:
+                out[a] = msg
+        return out
+
     def _brain_context(self, options):
+        if self.kind == "human":
+            robot = {}
+            for a, ps in self.peer_status.items():
+                if self.cfg["agents"][a]["kind"] == "robot":
+                    st = self.last_view.get(a, {})
+                    robot = {"state": st.get("state"), "robot_working_on_slot": ps["status"].get("target"),
+                             "learned_pick_time_s": round(self.cycle_of(a), 1)}
+            opts = [{"pick": p, "slot": self.slot_of(p), "weight": self.weight_of(p)} for p in options]
+            board = [{"slot": self.slot_of(p), "weight": self.weight_of(p), "status": self.reg(p)["status"],
+                      "owner": self.reg(p)["owner"]} for p in self.ordered_pids()]
+            return {"my_options": opts, "robot": robot, "board": board, "peer_says": self.peer_says(),
+                    "human_hand_zone": getattr(self.ex, "zone", None),
+                    "human_learned_pick_time_s": round(self.cycle_est, 1), "recent_events": list(self.log)[:6]}
         human = {}
         for a, ps in self.peer_status.items():
             if self.cfg["agents"][a]["kind"] == "human":
@@ -428,7 +450,7 @@ class Agent:
                   "owner": self.reg(p)["owner"]} for p in self.ordered_pids()]
         opts = [{"pick": p, "slot": self.slot_of(p), "weight": self.weight_of(p),
                  "rule_says": self.last_why.get(p, "")} for p in options]
-        return {"my_options": opts, "human": human, "board": board,
+        return {"my_options": opts, "human": human, "board": board, "peer_says": self.peer_says(),
                 "my_learned_pick_time_s": round(self.cycle_est, 1),
                 "recent_events": list(self.log)[:6]}
 
@@ -442,7 +464,7 @@ class Agent:
                                    "say": res.get("say", ""), "t": time.time(), "ms": res.get("ms")}
                 self.say(f"brain ({res.get('ms')} ms): {res.get('reasoning')}")
                 if res.get("say"):
-                    self.say(f"robot says: {res['say']}")
+                    self.say(f"{self.me} says: {res['say']}")
                 self._claim(res["pick"], "LLM: " + res.get("reasoning", ""))
                 return
             if res.get("action") == "wait" and self.brain_waits < 2:
@@ -669,7 +691,8 @@ class Agent:
             "human_max_weight": self.cfg["human_max_weight"],
             "slots": sorted(int(s) for s in self.cfg["slots"]),
             "danger": self.danger, "robot_target": self.robot_target,
-            "brain": dict(self.brain_last, on=bool(self.brain), calls=getattr(self.brain, "calls", 0)) if self.kind == "robot" else None,
+            "brain": dict(self.brain_last, on=bool(self.brain), calls=getattr(self.brain, "calls", 0)),
+            "peer_says": self.peer_says(),
             "robot_says": next((ps["status"].get("say") for a, ps in self.peer_status.items()
                                 if self.cfg["agents"][a]["kind"] == "robot" and ps["status"].get("say")
                                 and time.time() - ps["status"].get("say_t", 0) < 20), "") if self.kind == "human" else "",
@@ -822,7 +845,7 @@ def main():
     ap.add_argument("--cam", type=int, help="camera index: hand tracking (--arm hand) or Tier 2 motion watcher")
     ap.add_argument("--roi", help="camera region x,y,w,h covering the human arm")
     ap.add_argument("--watch", default="human", help="which peer the camera watches")
-    ap.add_argument("--llm", action="store_true", help="robot: Claude decides the next action (needs ANTHROPIC_API_KEY)")
+    ap.add_argument("--llm", action="store_true", help="Claude decides this agent's next action (needs ANTHROPIC_API_KEY)")
     ap.add_argument("--llm-model", default=None, help="Claude model id (default in brain.py)")
     ap.add_argument("--llm-mock", action="store_true", help="robot: offline stand-in brain, for testing the wiring")
     ap.add_argument("--view", help="camera stream to show on this page (display only), e.g. http://127.0.0.1:8001/video")
@@ -853,9 +876,9 @@ def main():
 
     agent = Agent(cfg, args.id, args.port, [parse_addr(p) for p in args.peer], ex, watcher, args.watch)
     agent.view_url = args.view
-    if kind == "robot" and (args.llm or args.llm_mock):
+    if args.llm or args.llm_mock:
         from brain import Brain
-        agent.brain = Brain(model=args.llm_model, mock=args.llm_mock)
+        agent.brain = Brain(model=args.llm_model, mock=args.llm_mock, role=kind)
         agent.brain_last = {"source": "claude", "reasoning": "LLM brain on: waiting for the first decision", "say": "", "t": 0}
         agent.say(f"LLM brain ON ({'mock' if args.llm_mock else agent.brain.model})")
     for f in (agent.send_loop, agent.recv_loop, agent.tick_loop):

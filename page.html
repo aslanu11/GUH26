@@ -100,13 +100,14 @@ async function refresh(){
     ov.classList.add('on'); if (S.kind === 'human') beep();
   } else ov.classList.remove('on');
   const rs = document.getElementById('robotsays');
-  if (S.kind === 'human' && S.robot_says) { rs.style.display = 'block'; rs.textContent = 'Robot: ' + S.robot_says; } else rs.style.display = 'none';
-  if (S.kind === 'robot' && S.brain) {
+  const ps = Object.entries(S.peer_says||{}).map(([a,m]) => `${a === 'robot' ? 'Robot' : 'Human agent'}: ${m}`);
+  if (ps.length) { rs.style.display = 'block'; rs.textContent = ps.join('   |   '); } else rs.style.display = 'none';
+  if (S.brain && S.brain.on) {
     const b = S.brain;
     h = `<div style="margin-top:10px;padding:10px;border:2px solid ${b.source==='claude'?'#7b1fa2':'#888'};border-radius:8px">
-      <b>Robot brain:</b> ${b.on ? (b.source==='claude' ? 'Claude' : (b.source==='mock' ? 'mock' : 'reflex rule (fallback)')) : 'off (reflex rule)'}
+      <b>${S.kind === 'robot' ? 'Robot brain' : 'Human assistant agent'}:</b> ${b.on ? (b.source==='claude' ? 'Claude' : (b.source==='mock' ? 'mock' : 'reflex rule (fallback)')) : 'off (reflex rule)'}
       ${b.ms ? `<span class="muted">· ${b.ms} ms</span>` : ''} <span class="muted">· ${b.calls||0} calls</span><br>
-      <span style="font-size:16px">${esc(b.reasoning)}</span>${b.say ? `<br><i>Says to human: "${esc(b.say)}"</i>` : ''}</div>`;
+      <span style="font-size:16px">${esc(b.reasoning)}</span>${b.say ? `<br><i>Says: "${esc(b.say)}"</i>` : ''}</div>`;
     document.getElementById('mine').insertAdjacentHTML('beforeend', h);
   }
   const ho = document.getElementById('handoff');

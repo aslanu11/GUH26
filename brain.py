@@ -34,7 +34,22 @@ Goals, in order:
 3. Communication: if something notable happened (you missed a grab, the human took your parcel, the
    human went away or came back, you're waiting for them), tell the human in a few friendly words.
 
-Always call choose_action. Keep reasoning to 1-2 short sentences that mention the facts you used."""
+Always call choose_action. Keep reasoning to 1-2 short sentences that mention the facts you used.
+If the human's assistant agent sent you a message (peer_says), take it into account and reply briefly."""
+
+SYSTEM_HUMAN = """You are the assistant agent for a HUMAN co-worker in a small fulfilment cell shared with an
+autonomous robot arm. Paper-ball parcels sit in numbered slots 1-5 in a row (slot 2 is next to 1 and 3).
+A shared rule has already decided which light parcels are the human's; you choose which one the human should
+do next and coordinate with the robot's agent by message.
+
+Goals, in order:
+1. Safety: steer the human AWAY from the slot the robot is working in (robot_working_on_slot) and the slots
+   next to it. If every option is next to the robot, choose wait briefly.
+2. Comfort and throughput: lighter parcels first; if the human is slow (high learned pick time), keep it simple.
+3. Coordination: tell the robot's agent in a few words what the human will do next (e.g. "Human taking
+   slot 1, keep clear"), and answer the robot's message (peer_says) if it sent one.
+
+Always call choose_action. 'pick' is the human's next parcel. Keep reasoning to 1-2 short sentences."""
 
 TOOL = {
     "name": "choose_action",
@@ -54,7 +69,9 @@ TOOL = {
 
 
 class Brain:
-    def __init__(self, model=None, key=None, timeout=4.0, mock=False):
+    def __init__(self, model=None, key=None, timeout=4.0, mock=False, role="robot"):
+        self.role = role
+        self.system = SYSTEM if role == "robot" else SYSTEM_HUMAN
         self.model = model or DEFAULT_MODEL
         self.key = key or os.environ.get("ANTHROPIC_API_KEY", "")
         self.timeout = timeout
@@ -66,12 +83,12 @@ class Brain:
         t0 = time.time()
         if self.mock:  # offline stand-in for testing the wiring
             opt = context["my_options"][0]
-            return {"action": "claim", "pick": opt["pick"], "reasoning": f"(mock) heaviest option is slot {opt['slot']}",
-                    "say": "", "source": "mock", "ms": 0}
+            return {"action": "claim", "pick": opt["pick"], "reasoning": f"(mock {self.role}) first option is slot {opt['slot']}",
+                    "say": f"({self.role}) taking slot {opt['slot']}", "source": "mock", "ms": 0}
         if not self.key:
             return {"action": "fallback", "error": "no ANTHROPIC_API_KEY set"}
         body = {
-            "model": self.model, "max_tokens": 300, "system": SYSTEM,
+            "model": self.model, "max_tokens": 300, "system": self.system,
             "tools": [TOOL], "tool_choice": {"type": "tool", "name": "choose_action"},
             "messages": [{"role": "user", "content": "Current situation (JSON):\n" + json.dumps(context)}],
         }
