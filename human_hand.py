@@ -73,6 +73,9 @@ class HandTracker(threading.Thread):
         self.last_motion_t = time.time()
         self.ok = False
         self._last_tip = None
+        self.jpeg = None           # latest annotated frame, served by the agent at /video
+        self.robot_target = None   # set by the agent: the slot the robot is working in
+        self.danger = False        # set by the agent: hand is in the robot's slot
 
     def run(self):
         import cv2
@@ -103,20 +106,31 @@ class HandTracker(threading.Thread):
                 if self._last_tip is None or abs(tip[0] - self._last_tip[0]) + abs(tip[1] - self._last_tip[1]) > MOTION_PX:
                     self.last_motion_t = time.time()
                 self._last_tip = tip
+            draw(cv2, frame, self.regions, tips, z, self.robot_target, self.danger)
+            ok_enc, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            if ok_enc:
+                self.jpeg = buf.tobytes()
             if self.show:
-                draw(cv2, frame, self.regions, tips, z)
                 cv2.imshow("hand tracker (q to quit)", frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
 
 
-def draw(cv2, frame, regions, tips, active):
+def draw(cv2, frame, regions, tips, active, robot_target=None, danger=False):
     for name, (x, y, w, h) in regions.items():
-        col = (0, 200, 0) if name == active else (200, 200, 200)
-        cv2.rectangle(frame, (x, y), (x + w, y + h), col, 2)
-        cv2.putText(frame, name, (x + 4, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
+        col, label, thick = (200, 200, 200), name, 2
+        if robot_target is not None and name == str(robot_target):
+            col, label, thick = (0, 140, 255), f"{name} ROBOT", 3          # orange: robot working here
+        if name == active:
+            col = (0, 0, 255) if danger else (0, 200, 0)                   # red if it's the robot's slot
+            thick = 4 if danger else thick
+        cv2.rectangle(frame, (x, y), (x + w, y + h), col, thick)
+        cv2.putText(frame, label, (x + 4, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
     for tx, ty in tips:
         cv2.circle(frame, (tx, ty), 8, (0, 0, 255), -1)
+    if danger:
+        cv2.rectangle(frame, (0, 0), (frame.shape[1] - 1, frame.shape[0] - 1), (0, 0, 255), 8)
+        cv2.putText(frame, "MOVE YOUR HAND - ROBOT WORKING", (12, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
 
 def teach_regions(cam, out):

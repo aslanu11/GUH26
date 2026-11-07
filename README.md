@@ -73,12 +73,13 @@ python human_hand.py watch --cam 1                          # check: red dot on 
 ```
 **Terminal 1, robot agent:**
 ```
-python agent.py --id robot --port 9100 --peer 127.0.0.1:9101 --web 8000 --arm so101 --arm-port COM5
+python agent.py --id robot --port 9100 --peer 127.0.0.1:9101 --web 8000 --arm so101 --arm-port COM7 --view http://127.0.0.1:8001/video
 ```
 **Terminal 2, human agent:**
 ```
 python agent.py --id human --port 9101 --peer 127.0.0.1:9100 --web 8001 --arm hand --cam 1
 ```
+Both pages show the overhead camera (zone boxes, fingertip, the robot's current slot in orange). If the human's hand is in the robot's slot, the human page shows a red **MOVE YOUR HAND** banner and beeps (click the page once to enable sound), and the robot pauses.
 Robot page: **http://localhost:8000** · human page: **http://localhost:8001**. Put them side by side. Each shows what *that* agent believes.
 Type orders like `1,2,3,4,5` on either one. Use **Reset run** after restocking the slots.
 

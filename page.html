@@ -15,6 +15,7 @@
   pre{font-size:12px;max-height:220px;overflow:auto;margin:0}
 </style></head><body>
 <h1 id="title">agent</h1><div class="sub" id="sub"></div>
+<div id="danger" style="display:none;background:#b00020;color:#fff;font-size:26px;font-weight:700;padding:14px 18px;border-radius:8px;margin-bottom:12px"></div>
 <div class="row">
   <div class="card" id="mine"></div>
   <div class="card"><b>Comms</b><div id="comms" class="big"></div>
@@ -29,8 +30,16 @@
     <table id="picks" style="margin-top:8px"></table></div>
   <div class="card"><b>Log</b><pre id="log"></pre></div>
 </div>
+<div class="row" style="margin-top:12px" id="camrow">
+  <div class="card"><b>Overhead camera</b> <span class="muted" id="camnote"></span><br>
+    <img id="cam" style="width:100%;max-width:720px;border-radius:6px;margin-top:6px" alt="camera"></div>
+</div>
 <script>
-let S = {};
+let S = {}; let camSrc = null; let actx = null; let lastBeep = 0;
+document.addEventListener('click', () => { if (!actx) { try { actx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} } });
+function beep(){ if (!actx || Date.now() - lastBeep < 900) return; lastBeep = Date.now();
+  const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 880; g.gain.value = 0.15;
+  o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + 0.25); }
 async function post(p, b){ const r = await fetch(p,{method:'POST',body:JSON.stringify(b)}); const j = await r.json();
   document.getElementById('msg').textContent = j.result==='ok' ? '' : j.result; refresh(); }
 function order(){ post('/order',{slots:document.getElementById('slots').value}); }
@@ -73,6 +82,13 @@ async function refresh(){
     t += `<tr><td>${esc(r.pid.split(':')[0])}</td><td>${r.slot}</td><td>${r.weight}</td><td class="s-${r.status}">${r.status}</td><td>${who}</td></tr>`; }
   document.getElementById('picks').innerHTML = t;
   document.getElementById('log').textContent = S.log.join('\n');
+  const d = document.getElementById('danger');
+  if (S.danger) { d.style.display = 'block'; d.textContent = `ROBOT WORKING IN SLOT ${S.danger.slot}: MOVE YOUR HAND`; beep(); }
+  else if (S.kind === 'robot' && S.paused) { d.style.display = 'block'; d.textContent = 'PAUSED: human hand in my slot'; }
+  else d.style.display = 'none';
+  if (S.view_url && S.view_url !== camSrc) { camSrc = S.view_url; document.getElementById('cam').src = camSrc; }
+  document.getElementById('camrow').style.display = S.view_url ? 'flex' : 'none';
+  document.getElementById('camnote').textContent = S.kind === 'robot' ? '(display only: the robot does not use this feed)' : '(the human agent tracks your hand with this)';
 }
 setInterval(refresh, 500); refresh();
 </script></body></html>

@@ -119,6 +119,9 @@ class Agent:
         self.abort_flag = False
         self.log = deque(maxlen=40)
         self.last_view, self.last_assign, self.last_reasons = {}, {}, {}
+        self.danger = None              # human agent: {"slot": n} while the hand is in the robot's slot
+        self.robot_target = None        # human agent: where the robot is working (from its heartbeat)
+        self.view_url = None            # camera stream shown on this agent's page
         self._dwell_zone, self._dwell_since = None, 0.0
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -311,6 +314,7 @@ class Agent:
 
         if self.kind == "human":
             self._human_tick()
+            self._safety_tick()
 
         if self.busy_pid is None and self.available and getattr(self.ex, "arm_ok", True):
             for pid in self.ordered_pids():
@@ -403,6 +407,22 @@ class Agent:
             self.busy_pid = None
             self._assign_human(None)
 
+    def _safety_tick(self):
+        """Warn the human when their hand is in the slot the robot is working in."""
+        target = None
+        for a, ps in self.peer_status.items():
+            if self.cfg["agents"][a]["kind"] == "robot" and time.time() - ps["t"] < self.cfg["suspect_s"]:
+                if ps["status"].get("busy") and ps["status"].get("target") is not None:
+                    target = ps["status"]["target"]
+        self.robot_target = target
+        zone = getattr(self.ex, "zone", None)
+        danger = target is not None and zone == str(target)
+        if danger and not self.danger:
+            self.say(f"WARNING: hand in slot {target} where the robot is working")
+        self.danger = {"slot": target} if danger else None
+        if hasattr(self.ex, "robot_target"):
+            self.ex.robot_target, self.ex.danger = target, danger
+
     def _human_tick(self):
         now, c = time.time(), self.cfg
         # completion: dwell in a slot zone, then leave it
@@ -481,6 +501,8 @@ class Agent:
             "peer_zone": {a: ps["status"].get("zone") for a, ps in self.peer_status.items()},
             "human_max_weight": self.cfg["human_max_weight"],
             "slots": sorted(int(s) for s in self.cfg["slots"]),
+            "danger": self.danger, "robot_target": self.robot_target,
+            "view_url": self.view_url or ("/video" if hasattr(self.ex, "jpeg") else None),
             "fake": type(self.ex).__name__.startswith("Fake"),
             "walked_away": getattr(self.ex, "paused", False),
         }
@@ -550,12 +572,31 @@ def make_handler(agent):
             self.wfile.write(body)
 
         def do_GET(self):
+            if self.path.startswith("/video"):
+                return self._mjpeg()
             if self.path.startswith("/state"):
                 with agent.lock:
                     data = json.dumps(agent.state_json()).encode()
                 self._send(200, data, "application/json")
             else:
                 self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+
+        def _mjpeg(self):
+            if not hasattr(agent.ex, "jpeg"):
+                return self._send(404, b"no camera on this agent", "text/plain")
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                while True:
+                    jpg = agent.ex.jpeg
+                    if jpg:
+                        self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                                         + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n")
+                    time.sleep(0.08)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
 
         def do_POST(self):
             n = int(self.headers.get("Content-Length") or 0)
@@ -591,6 +632,7 @@ def main():
     ap.add_argument("--cam", type=int, help="camera index: hand tracking (--arm hand) or Tier 2 motion watcher")
     ap.add_argument("--roi", help="camera region x,y,w,h covering the human arm")
     ap.add_argument("--watch", default="human", help="which peer the camera watches")
+    ap.add_argument("--view", help="camera stream to show on this page (display only), e.g. http://127.0.0.1:8001/video")
     args = ap.parse_args()
 
     cfg = json.loads(Path(args.config).read_text())
@@ -617,6 +659,7 @@ def main():
         watcher.start()
 
     agent = Agent(cfg, args.id, args.port, [parse_addr(p) for p in args.peer], ex, watcher, args.watch)
+    agent.view_url = args.view
     for f in (agent.send_loop, agent.recv_loop, agent.tick_loop):
         threading.Thread(target=f, daemon=True).start()
     agent.say(f"{kind} agent up. UDP :{args.port} peers {args.peer}  page http://localhost:{args.web}")
