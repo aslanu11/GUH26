@@ -153,8 +153,14 @@ class Agent:
         return self.picks.get(pid, DEFAULT_REG)
 
     def write(self, pid, status, owner, **extra):
-        if self.reg(pid)["status"] in FINAL:
+        cur = self.reg(pid)
+        if cur["status"] in FINAL:
             return
+        # 'robot missed it twice' survives every release/claim; only Retry robot (skip=[]) clears it
+        if "skip" not in extra and cur.get("skip"):
+            extra["skip"] = cur["skip"]
+        if not extra.get("skip"):
+            extra.pop("skip", None)
         self.clock += 1
         self.picks[pid] = {"status": status, "owner": owner, "clock": self.clock, "w": self.me, **extra}
 
@@ -519,7 +525,10 @@ class Agent:
                 self.say(f"slot {slot} was empty")
             elif res == "missed":
                 self.write(pid, "pending", None, skip=[self.me])
-                self.say(f"missed slot {slot} twice - back home, handing it to the human")
+                if self.weight_of(pid) > self.cfg["human_max_weight"]:
+                    self.say(f"missed slot {slot} twice - back home. Too heavy for the human: reposition it, then Retry robot")
+                else:
+                    self.say(f"missed slot {slot} twice - back home, handing it to the human")
             elif res == "failed":
                 self.available = False
                 if self.reg(pid)["owner"] == self.me:
@@ -713,7 +722,7 @@ class Agent:
             if path == "/retry":  # clear 'robot missed it' so the robot tries again
                 pid = body.get("pid")
                 if pid in self.picks and self.reg(pid)["status"] not in FINAL:
-                    self.write(pid, "pending", None)
+                    self.write(pid, "pending", None, skip=[])
                     self.say(f"retry: slot {self.slot_of(pid)} open to the robot again")
                 return "ok"
             if path == "/miss":   # fake robot: simulate empty grasps on a slot

@@ -142,6 +142,18 @@ def main():
         ok &= wait(lambda: any("trying again" in l for l in state(R)["log"]), 8, "robot retries after first miss")
         ok &= wait(lambda: state(H)["handoff"] == [1], 6, "after second miss the human is prompted for slot 1")
         ok &= wait(lambda: all(r["status"] == "done" and r["owner"] == "human" for r in state(H)["rows"]), 15, "human collects it")
+
+        print("8. Hand-off survives the human going away: robot must NOT retry a slot it missed twice")
+        post(R, "/reset"); time.sleep(1)
+        post(H, "/walkaway", {"value": True})           # human will go 'away' while holding the hand-off
+        post(R, "/order", {"slots": "2"})               # robot misses slot 2 twice (miss_slots still has 1; add 2)
+        post(R, "/miss", {"slot": 2})
+        ok &= wait(lambda: state(H)["handoff"] == [2], 20, "slot 2 handed off after two misses")
+        time.sleep(6)                                   # human away -> release; robot must not pick it up again
+        n_claims = sum("claimed slot 2" in l for l in state(R)["log"])
+        ok &= wait(lambda: n_claims == 1 and state(R)["my_next"] is None, 1, f"robot claimed slot 2 only once (saw {n_claims})")
+        post(H, "/walkaway", {"value": False})
+        ok &= wait(lambda: all(r["status"] == "done" and r["owner"] == "human" for r in state(H)["rows"]), 20, "human back -> collects it")
     finally:
         for p in procs:
             p.terminate()

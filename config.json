@@ -4,7 +4,7 @@
   "heartbeat_s": 0.25,
   "suspect_s": 1.5,
   "down_s": 6.0,
-  "away_s": 8.0,
+  "away_s": 12.0,
   "dwell_s": 0.6,
   "learn_alpha": 0.4,
   "agents": {
