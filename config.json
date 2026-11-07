@@ -1,21 +1,78 @@
 {
-  "human_max_weight": 3,
+  "human_max_weight": 6,
   "weight_cost_k": 2.0,
   "heartbeat_s": 0.25,
   "suspect_s": 1.5,
   "down_s": 6.0,
-  "away_s": 12.0,
+  "away_s": 8.0,
   "dwell_s": 0.6,
   "learn_alpha": 0.4,
   "agents": {
-    "robot": {"kind": "robot", "speed": 10.0, "cycle_s": 10.0, "reach": [1, 2, 3, 4, 5]},
-    "human": {"kind": "human", "speed": 15.0, "cycle_s": 6.0, "reach": [1, 2, 3, 4, 5]}
+    "robot": {
+      "kind": "robot",
+      "speed": 10.0,
+      "cycle_s": 10.0,
+      "reach": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    "human": {
+      "kind": "human",
+      "speed": 15.0,
+      "cycle_s": 6.0,
+      "reach": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    }
   },
   "slots": {
-    "1": {"weight": 1, "dist": {"robot": 20, "human": 40}},
-    "2": {"weight": 2, "dist": {"robot": 25, "human": 35}},
-    "3": {"weight": 3, "dist": {"robot": 30, "human": 30}},
-    "4": {"weight": 4, "dist": {"robot": 35, "human": 25}},
-    "5": {"weight": 5, "dist": {"robot": 40, "human": 20}}
-  }
+    "1": {
+      "weight": 1,
+      "dist": {
+        "robot": 20,
+        "human": 40
+      }
+    },
+    "2": {
+      "weight": 2,
+      "dist": {
+        "robot": 25,
+        "human": 35
+      }
+    },
+    "3": {
+      "weight": 3,
+      "dist": {
+        "robot": 30,
+        "human": 30
+      }
+    },
+    "4": {
+      "weight": 4,
+      "dist": {
+        "robot": 35,
+        "human": 25
+      }
+    },
+    "5": {
+      "weight": 5,
+      "dist": {
+        "robot": 40,
+        "human": 20
+      }
+    }
+  },
+  "random_weights": true,
+  "weight_range": [
+    1,
+    10
+  ]
 }

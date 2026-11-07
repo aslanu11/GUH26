@@ -41,7 +41,7 @@ def statuses(base):
 
 def main():
     cfg = json.loads((HERE / "config.json").read_text())
-    cfg.update(away_s=4.0, down_s=4.0)  # faster for testing
+    cfg.update(away_s=4.0, down_s=4.0, random_weights=False, human_max_weight=3)  # deterministic + faster
     tmp = Path(tempfile.mkdtemp()) / "config.json"
     tmp.write_text(json.dumps(cfg))
     procs = [
@@ -107,6 +107,23 @@ def main():
         ok &= wait(lambda: all(r["status"] == "done" for r in state(H)["rows"]), 60, "all done after merge")
         same = lambda: [r["status"] for r in state(R)["rows"]] == [r["status"] for r in state(H)["rows"]]
         ok &= wait(same, 3, "both agents agree on the final board")
+
+        print("6. Random weights: heavy -> robot, human limit respected, both agents see the same weights")
+        cfg2 = dict(cfg, random_weights=True, human_max_weight=6)
+        tmp.write_text(json.dumps(cfg2))
+        for p in procs:
+            p.terminate()
+        time.sleep(0.5)
+        procs[:] = [subprocess.Popen([sys.executable, str(HERE / "agent.py"), "--id", i, "--port", pt, "--peer", f"127.0.0.1:{pp}",
+                                      "--web", w, "--config", str(tmp)], stdout=subprocess.DEVNULL)
+                    for i, pt, pp, w in (("robot", "9100", "9101", "8100"), ("human", "9101", "9100", "8101"))]
+        time.sleep(1.5)
+        post(R, "/order", {"slots": "1,2,3,4,5"})
+        ok &= wait(lambda: [r["weight"] for r in state(R)["rows"]] == [r["weight"] for r in state(H)["rows"]] and len(state(H)["rows"]) == 5,
+                   3, "both agents see the same random weights " + str([r["weight"] for r in state(R)["rows"]]))
+        ok &= wait(lambda: all(r["status"] == "done" for r in state(R)["rows"]), 60, "all done")
+        rows = state(R)["rows"]
+        ok &= wait(lambda: all(r["owner"] == "robot" for r in rows if r["weight"] > 6), 1, "every weight > 6 done by the robot")
     finally:
         for p in procs:
             p.terminate()

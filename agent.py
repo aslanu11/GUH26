@@ -150,6 +150,12 @@ class Agent:
     def slot_of(self, pid):
         return int(pid.rsplit(":", 1)[1])
 
+    def weight_of(self, pid):
+        """Each order carries its parcels' weights (drawn when the order is created), like a manifest."""
+        o = self.orders.get(pid.rsplit(":", 1)[0], {})
+        slot = str(self.slot_of(pid))
+        return int(o.get("weights", {}).get(slot, self.cfg["slots"][slot]["weight"]))
+
     def ordered_pids(self):
         out = []
         for o in sorted(self.orders.values(), key=lambda o: (o["seq"], o["id"])):
@@ -270,11 +276,11 @@ class Agent:
         self.n_picks += 1
         self.say(f"learned: that pick took {dt:.1f}s -> my pick time {old:.1f}s -> {self.cycle_est:.1f}s")
 
-    def cost(self, a, slot, queue):
+    def cost(self, a, slot, queue, weight):
         ag, s = self.cfg["agents"][a], self.cfg["slots"][str(slot)]
         c = s["dist"][a] / ag["speed"] + queue[a] * self.cycle_of(a)
         if ag["kind"] == "human":
-            c += self.cfg["weight_cost_k"] * s["weight"]
+            c += self.cfg["weight_cost_k"] * weight
         return c
 
     def allocate(self, v):
@@ -286,7 +292,10 @@ class Agent:
             if r["status"] == "claimed" and r["owner"] in v and v[r["owner"]]["alive"]:
                 queue[r["owner"]] += 1
         orders = {o["id"]: o for o in self.orders.values()}
-        for pid in self.ordered_pids():
+        seq = {o["id"]: o["seq"] for o in self.orders.values()}
+        # decide the heaviest parcels first (within each order), so heavy ones are matched before queues fill
+        heavy_first = sorted(self.ordered_pids(), key=lambda p: (seq[p.rsplit(":", 1)[0]], -self.weight_of(p), self.slot_of(p)))
+        for pid in heavy_first:
             r = self.reg(pid)
             if r["status"] in FINAL:
                 continue
@@ -295,7 +304,7 @@ class Agent:
                 why[pid] = self.my_reason.get(pid, f"claimed by {r['owner']}") if r["owner"] == self.me else f"claimed by {r['owner']}"
                 continue
             slot = self.slot_of(pid)
-            weight = c["slots"][str(slot)]["weight"]
+            weight = self.weight_of(pid)
             among = orders[pid.rsplit(":", 1)[0]]["among"]
             cands, excluded = [], []
             for a, ag in c["agents"].items():
@@ -321,7 +330,7 @@ class Agent:
                 heavy = weight > c["human_max_weight"]
                 reasons[pid] = f"blocked: weight {weight} needs a robot" if heavy else "blocked: no agent available"
                 continue
-            costs = {a: self.cost(a, slot, queue) for a in cands}
+            costs = {a: self.cost(a, slot, queue, weight) for a in cands}
             best = min(cands, key=lambda a: (costs[a], KIND_RANK[c["agents"][a]["kind"]], a))
             assign[pid] = best
             parts = [f"{a} {costs[a]:.1f}" for a in sorted(cands, key=lambda a: costs[a])]
@@ -357,7 +366,9 @@ class Agent:
             self._safety_tick()
 
         if self.busy_pid is None and self.available and getattr(self.ex, "arm_ok", True):
-            for pid in self.ordered_pids():
+            sign = 1 if self.kind == "human" else -1   # human: lightest first, robot: heaviest first
+            mine = sorted(self.ordered_pids(), key=lambda p: sign * self.weight_of(p))
+            for pid in mine:
                 if self.last_assign.get(pid) == self.me:
                     self.my_reason[pid] = self.last_why.get(pid, "")
                     self.claim_t[pid] = time.time()
@@ -510,8 +521,13 @@ class Agent:
         self.clock += 1
         self.order_counter += 1
         oid = f"{self.me}{self.epoch}-{self.order_counter}"
-        self.orders[oid] = {"id": oid, "slots": slots, "seq": self.clock, "among": among, "by": self.me}
-        self.say(f"order {oid}: slots {slots} (shared with {among})")
+        order = {"id": oid, "slots": slots, "seq": self.clock, "among": among, "by": self.me}
+        if self.cfg.get("random_weights"):
+            lo, hi = self.cfg.get("weight_range", [1, 10])
+            order["weights"] = {str(s): random.randint(lo, hi) for s in slots}
+        self.orders[oid] = order
+        w = order.get("weights")
+        self.say(f"order {oid}: slots {slots}" + (f" weights {w}" if w else "") + f" (shared with {among})")
         return "ok"
 
     def reset(self):
@@ -529,7 +545,7 @@ class Agent:
         for pid in self.ordered_pids():
             r, slot = self.reg(pid), self.slot_of(pid)
             rows.append({
-                "pid": pid, "slot": slot, "weight": self.cfg["slots"][str(slot)]["weight"],
+                "pid": pid, "slot": slot, "weight": self.weight_of(pid),
                 "status": r["status"], "owner": r["owner"], "by": r["w"],
                 "assigned": self.last_assign.get(pid), "reason": self.last_reasons.get(pid),
                 "why": self.last_why.get(pid),
@@ -537,7 +553,7 @@ class Agent:
         my_next = None
         if self.busy_pid:
             s = self.slot_of(self.busy_pid)
-            my_next = {"slot": s, "weight": self.cfg["slots"][str(s)]["weight"]}
+            my_next = {"slot": s, "weight": self.weight_of(self.busy_pid)}
         return {
             "me": self.me, "kind": self.kind, "epoch": self.epoch, "comms_cut": self.comms_cut,
             "available": self.available, "arm_ok": getattr(self.ex, "arm_ok", True),

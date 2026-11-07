@@ -80,7 +80,7 @@ async function refresh(){
   for (const r of S.rows) {
     let who = r.status==='pending' ? (r.assigned ? `→ ${r.assigned}` : `<span class="warn">${esc(r.reason)}</span>`) : esc(r.owner || r.by);
     if (r.status==='claimed') who = esc(r.owner);
-    t += `<tr><td>${esc(r.pid.split(':')[0])}</td><td>${r.slot}</td><td>${r.weight}</td><td class="s-${r.status}">${r.status}</td><td>${who}</td><td class="muted" style="font-size:12px">${esc(r.why ?? '')}</td></tr>`; }
+    t += `<tr><td>${esc(r.pid.split(':')[0])}</td><td>${r.slot}</td><td><b>${r.weight}</b></td><td class="s-${r.status}">${r.status}</td><td>${who}</td><td class="muted" style="font-size:12px">${esc(r.why ?? '')}</td></tr>`; }
   document.getElementById('picks').innerHTML = t;
   document.getElementById('log').textContent = S.log.join('\n');
   const d = document.getElementById('danger');

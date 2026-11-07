@@ -7,7 +7,7 @@ A mini Amazon pick station run by **two independent agents with no central contr
 - **Robot agent**: the SO-101 follower picks objects with its gripper, fully autonomously (taught picks replayed when the agent decides). It has its wrist camera.
 - **Human agent**: a real person (Ruslan in the demo) picks with **their own hand**. The **overhead camera** (plugged into Aslan's laptop) tracks the hand with MediaPipe and knows which slot it's in. A hand resting in a slot, then leaving, counts as a pick. The leader arm isn't used (`human_leader.py` stays as a fallback).
 
-Each object sits in a numbered slot and carries a **post-it weight label from 1 (light) to 5 (heavy)**. Both agents run the **same rule** (distance + weight + queue) on their own copy of the order board, so they agree who picks what without negotiating. **Labels above 3 are robot-only**, for human safety.
+Each slot holds one parcel (a paper ball). **Every new order draws a random weight from 1 to 10 for each parcel** (stored in the order, like a manifest, so every agent sees the same weights). The robot takes the heaviest, heaviest first; the human gets the lightest, lightest first. Both agents run the **same rule** (distance + weight + queue) on their own copy of the order board, so they agree who picks what without negotiating. **Weights above 6 are robot-only** (`human_max_weight` in config.json), for human safety.
 
 ## Demo moments (what the judges see)
 | Event | What happens |
