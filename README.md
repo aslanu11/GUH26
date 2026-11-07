@@ -36,18 +36,20 @@ Each agent sends its full state (orders, pick records, status) over UDP to its p
 
 The **interfaces between files** are written at the top of each file. Don't change an interface without telling its owner in Discord.
 
-## Setup (every laptop)
-```bash
-git clone <this repo> && cd <repo>
-pip install -r requirements.txt        # feetech-servo-sdk, pyserial (+ opencv-python for vision)
-python test_scenarios.py               # fake robot + fake human, checks every demo moment, no hardware
+## Setup (every laptop). Windows PowerShell: run ONE line at a time, no `&&`
 ```
+git clone https://github.com/aslanu11/GUH26.git
+cd GUH26
+pip install -r requirements.txt
+python test_scenarios.py
+```
+`test_scenarios.py` runs a fake robot + fake human and checks every demo moment, no hardware. It must print `ALL PASS`.
 
 ## Run for real
 Both laptops on the **same phone hotspot**. Find each laptop's IP (`ipconfig` / `ifconfig`). **Close MakerMods Lab first**: only one program can use an arm's port.
 
 **Laptop 1, robot (Kazy):**
-```bash
+```
 python robot_arm.py ports                                   # find the follower's port
 python robot_arm.py teach --port COM5 --name home           # once
 python robot_arm.py teach --port COM5 --name 1              # ...one per slot, 1-5
@@ -55,7 +57,7 @@ python agent.py --id robot --port 9100 --peer <LAPTOP2_IP>:9101 --arm so101 --ar
 #   Tier 2: add  --cam 1 --roi x,y,w,h   (from python vision.py roi --cam 1)
 ```
 **Laptop 2, human (Ruslan):**
-```bash
+```
 python human_leader.py teach --port COM6                    # home, 1-5, tray, reject
 python agent.py --id human --port 9101 --peer <LAPTOP1_IP>:9100 --arm leader --arm-port COM6
 ```
