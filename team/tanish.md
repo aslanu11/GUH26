@@ -1,5 +1,5 @@
 # Tanish: layout, objects, camera
-You own: `vision.py`. You supply the numbers for `config.json` (send them to Aslan).
+You own: `vision.py`. You supply the numbers for `config.json` (send them to Aslan). Your laptop is the **spare**: use it to develop `vision.py` with the camera, then the camera moves to Kazy's laptop for the real run.
 
 ## Tasks, in order
 1. [ ] Tape down **5 slots and one long tray** within reach of BOTH arms. The robot drops at its end of the tray and the human at theirs. Add a **reject bin** for "damaged" items

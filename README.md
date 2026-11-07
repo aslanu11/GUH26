@@ -4,8 +4,8 @@
 
 A mini Amazon pick station run by **two independent agents with no central controller**:
 
-- **Robot agent** (laptop 1, Kazy's): the SO-101 follower picks objects with its gripper. It has the overhead camera.
-- **Human agent** (laptop 2): a person uses the SO-101 **leader arm as a tracked tool** to push objects into the tray. The leader's encoders tell the system exactly where the human's arm is. **Teleop is OFF: the leader never drives the follower.**
+- **Robot agent** (Kazy's laptop): the SO-101 follower picks objects with its gripper. It has the overhead camera.
+- **Human agent** (Aslan's laptop): a person (Ruslan in the demo) uses the SO-101 **leader arm as a tracked tool** to push objects into the tray. The leader's encoders tell the system exactly where the human's arm is. **Teleop is OFF: the leader never drives the follower.**
 
 Each object sits in a numbered slot and carries a **post-it weight label from 1 (light) to 5 (heavy)**. Both agents run the **same rule** (distance + weight + queue) on their own copy of the order board, so they agree who picks what without negotiating. **Labels above 3 are robot-only**, for human safety.
 
@@ -36,6 +36,16 @@ Each agent sends its full state (orders, pick records, status) over UDP to its p
 
 The **interfaces between files** are written at the top of each file. Don't change an interface without telling its owner in Discord.
 
+## Which laptop does what
+| Laptop | Runs | Plugged in |
+|---|---|---|
+| **Kazy's** (Windows) | Robot agent | Follower arm + overhead camera |
+| **Aslan's** (Windows) | Human agent | Leader arm |
+| **Tanish's** (Windows) | Spare / backup (later: a simulated 3rd agent) | none |
+| Ruslan's, Ayman's (MacBooks) | Editing, fake-mode tests, pitch | none |
+
+**Mac users:** everything works the same, but type `python3` / `pip3`. Arm ports look like `/dev/tty.usbmodemXXXX`. Ruslan edits `human_leader.py` on his Mac and pushes; Aslan pulls and runs it with the leader plugged in.
+
 ## Setup (every laptop). Windows PowerShell: run ONE line at a time, no `&&`
 ```
 git clone https://github.com/aslanu11/GUH26.git
@@ -46,20 +56,20 @@ python test_scenarios.py
 `test_scenarios.py` runs a fake robot + fake human and checks every demo moment, no hardware. It must print `ALL PASS`.
 
 ## Run for real
-Both laptops on the **same phone hotspot**. Find each laptop's IP (`ipconfig` / `ifconfig`). **Close MakerMods Lab first**: only one program can use an arm's port.
+Kazy's and Aslan's laptops on the **same phone hotspot**. Find each laptop's IP (`ipconfig` / `ifconfig`). **Close MakerMods Lab first**: only one program can use an arm's port.
 
-**Laptop 1, robot (Kazy):**
+**Kazy's laptop, robot agent:**
 ```
 python robot_arm.py ports                                   # find the follower's port
 python robot_arm.py teach --port COM5 --name home           # once
 python robot_arm.py teach --port COM5 --name 1              # ...one per slot, 1-5
-python agent.py --id robot --port 9100 --peer <LAPTOP2_IP>:9101 --arm so101 --arm-port COM5
+python agent.py --id robot --port 9100 --peer <ASLAN_IP>:9101 --arm so101 --arm-port COM5
 #   Tier 2: add  --cam 1 --roi x,y,w,h   (from python vision.py roi --cam 1)
 ```
-**Laptop 2, human (Ruslan):**
+**Aslan's laptop, human agent (Ruslan operates the leader):**
 ```
 python human_leader.py teach --port COM6                    # home, 1-5, tray, reject
-python agent.py --id human --port 9101 --peer <LAPTOP1_IP>:9100 --arm leader --arm-port COM6
+python agent.py --id human --port 9101 --peer <KAZY_IP>:9100 --arm leader --arm-port COM6
 ```
 Open **http://localhost:8000** on each laptop and put them side by side. Each page shows what *that* agent believes. Type orders like `1,2,3,4,5` on either one. Use **Reset run** after restocking the slots.
 
@@ -76,7 +86,7 @@ Open **http://localhost:8000** on each laptop and put them side by side. Each pa
 |---|---|
 | 1:45 | Layout taped down (Tanish) |
 | 2:15 | Follower replays one pick (Kazy) · both agents talking over the hotspot (Aslan) |
-| 2:30 | Leader zones detected live (Ruslan) |
+| 2:30 | Leader zones detected live (Ruslan + Aslan, on Aslan's laptop) |
 | 3:30 | Full run on real hardware |
 | 4:00 | Tier 2 (camera) only if everything above works |
 | **4:45** | **Freeze.** Three full runs, film the best one (Ayman) |
