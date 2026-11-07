@@ -35,6 +35,7 @@ MIN_SEGMENT_S = 0.4
 GRASP_SQUEEZE = 100     # extra ticks past contact so the grasp actually holds
 GRASP_DWELL_S = 0.4
 RELEASE_TICKS = 300   # opening the gripper more than this after a grasp = release
+EMPTY_GRASP_TICKS = 35  # gripper got within this of its squeeze target = it closed on nothing (tune!)
 HZ = 50
 
 
@@ -72,8 +73,10 @@ def hold_grip(waypoints):
     return out
 
 
-def play(bus, waypoints, should_pause=lambda: False, should_abort=lambda: False):
-    """Interpolate through waypoints. Abort is honoured until the first grasp, then we retrace home."""
+def play(bus, waypoints, should_pause=lambda: False, should_abort=lambda: False, check_grasp=False):
+    """Interpolate through waypoints. Abort is honoured until the first grasp, then we retrace home.
+    check_grasp: after the grasp, if the gripper closed (almost) fully there's nothing in it -> open,
+    retrace back the way we came, return "missed"."""
     waypoints = hold_grip(waypoints)
     cur = bus.read_positions()
     prev = {"pos": cur, "grip": False}
@@ -101,6 +104,16 @@ def play(bus, waypoints, should_pause=lambda: False, should_abort=lambda: False)
         if wp.get("grip"):
             grasped = True
             time.sleep(GRASP_DWELL_S)
+            if check_grasp:
+                got = bus.read_positions()["gripper"]
+                err = abs(got - wp["pos"]["gripper"])
+                print(f"[robot_arm] grasp check: gripper {err} ticks short of target (empty below {EMPTY_GRASP_TICKS})")
+                if err < EMPTY_GRASP_TICKS:
+                    cur = wp["pos"]
+                    for back in reversed(visited[1:]):   # open at the pre-grasp pose, then retrace home
+                        _move(bus, cur, back["pos"])
+                        cur = back["pos"]
+                    return "missed"
         visited.append(wp)
         prev = wp
     return "ok"
@@ -144,7 +157,7 @@ class FollowerReplay:
         # Tier 2 hook (Tanish/Kazy): check the wrist camera here and return "empty" if the slot is empty.
         try:
             self.zone = str(slot)
-            return play(self.bus, full_path(self.motions, slot), should_pause, should_abort)
+            return play(self.bus, full_path(self.motions, slot), should_pause, should_abort, check_grasp=True)
         except FileNotFoundError as e:
             print(f"[robot_arm] {e}")
             return "failed"

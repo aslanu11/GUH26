@@ -74,5 +74,6 @@
   "weight_range": [
     1,
     10
-  ]
+  ],
+  "start_delay_s": 6.0
 }

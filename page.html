@@ -15,6 +15,9 @@
   pre{font-size:12px;max-height:220px;overflow:auto;margin:0}
 </style></head><body>
 <h1 id="title">agent</h1><div class="sub" id="sub"></div>
+<div id="overlay" style="display:none;position:fixed;inset:0;z-index:10;align-items:center;justify-content:center;flex-direction:column;text-align:center;font-weight:800"></div>
+<style>@keyframes flash{0%,100%{background:#ffd600;color:#111}50%{background:#111;color:#ffd600}} #overlay.on{display:flex !important;animation:flash .8s step-end infinite}</style>
+<div id="handoff" style="display:none;background:#ff6d00;color:#111;font-size:26px;font-weight:700;padding:14px 18px;border-radius:8px;margin-bottom:12px"></div>
 <div id="danger" style="display:none;background:#b00020;color:#fff;font-size:26px;font-weight:700;padding:14px 18px;border-radius:8px;margin-bottom:12px"></div>
 <div class="row">
   <div class="card" id="mine"></div>
@@ -80,13 +83,26 @@ async function refresh(){
   for (const r of S.rows) {
     let who = r.status==='pending' ? (r.assigned ? `→ ${r.assigned}` : `<span class="warn">${esc(r.reason)}</span>`) : esc(r.owner || r.by);
     if (r.status==='claimed') who = esc(r.owner);
-    t += `<tr><td>${esc(r.pid.split(':')[0])}</td><td>${r.slot}</td><td><b>${r.weight}</b></td><td class="s-${r.status}">${r.status}</td><td>${who}</td><td class="muted" style="font-size:12px">${esc(r.why ?? '')}</td></tr>`; }
+    t += `<tr><td>${esc(r.pid.split(':')[0])}</td><td>${r.slot}</td><td><b>${r.weight}</b></td><td class="s-${r.status}">${r.status}</td><td>${who}</td><td class="muted" style="font-size:12px">${esc(r.why ?? '')}${(r.skip||[]).length && r.status!=='done' ? ` <button onclick="post('/retry',{pid:'${r.pid}'})">Retry robot</button>` : ''}</td></tr>`; }
   document.getElementById('picks').innerHTML = t;
   document.getElementById('log').textContent = S.log.join('\n');
   const d = document.getElementById('danger');
   if (S.danger) { d.style.display = 'block'; d.textContent = `ROBOT WORKING IN SLOT ${S.danger.slot}: MOVE YOUR HAND`; beep(); }
   else if (S.kind === 'robot' && S.paused) { d.style.display = 'block'; d.textContent = 'PAUSED: human hand in my slot'; }
   else d.style.display = 'none';
+  const ov = document.getElementById('overlay');
+  if (S.countdown > 0.2) {
+    const picks = (S.my_picks||[]).map(p => p.slot).join('  ·  ');
+    ov.innerHTML = S.kind === 'human'
+      ? `<div style="font-size:40px">YOUR PICKS (lightest first)</div><div style="font-size:120px;letter-spacing:8px">${picks || 'none'}</div><div style="font-size:36px">Robot starts in ${Math.ceil(S.countdown)} s</div>`
+      : `<div style="font-size:40px">ROBOT PICKS (heaviest first)</div><div style="font-size:120px;letter-spacing:8px">${picks || 'none'}</div><div style="font-size:36px">Starting in ${Math.ceil(S.countdown)} s</div>`;
+    ov.classList.add('on'); if (S.kind === 'human') beep();
+  } else ov.classList.remove('on');
+  const ho = document.getElementById('handoff');
+  if (S.handoff && S.handoff.length) {
+    ho.style.display = 'block';
+    ho.textContent = S.kind === 'human' ? `ROBOT COULDN'T GRAB SLOT ${S.handoff.join(', ')}: PLEASE COLLECT IT` : `Missed slot ${S.handoff.join(', ')} twice: handed to the human`;
+  } else ho.style.display = 'none';
   if (S.view_url && S.view_url !== camSrc) { camSrc = S.view_url; document.getElementById('cam').src = camSrc; }
   document.getElementById('camrow').style.display = S.view_url ? 'flex' : 'none';
   document.getElementById('camnote').textContent = S.kind === 'robot' ? '(display only: the robot does not use this feed)' : '(the human agent tracks your hand with this)';

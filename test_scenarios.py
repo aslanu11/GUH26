@@ -41,7 +41,7 @@ def statuses(base):
 
 def main():
     cfg = json.loads((HERE / "config.json").read_text())
-    cfg.update(away_s=4.0, down_s=4.0, random_weights=False, human_max_weight=3)  # deterministic + faster
+    cfg.update(away_s=4.0, down_s=4.0, random_weights=False, human_max_weight=3, start_delay_s=0)  # deterministic + faster
     tmp = Path(tempfile.mkdtemp()) / "config.json"
     tmp.write_text(json.dumps(cfg))
     procs = [
@@ -124,6 +124,24 @@ def main():
         ok &= wait(lambda: all(r["status"] == "done" for r in state(R)["rows"]), 60, "all done")
         rows = state(R)["rows"]
         ok &= wait(lambda: all(r["owner"] == "robot" for r in rows if r["weight"] > 6), 1, "every weight > 6 done by the robot")
+
+        print("7. Robot misses twice -> goes home, human is prompted and collects it; countdown before start")
+        cfg3 = dict(cfg, random_weights=False, human_max_weight=3, start_delay_s=3)
+        tmp.write_text(json.dumps(cfg3))
+        for p in procs:
+            p.terminate()
+        time.sleep(0.5)
+        procs[:] = [subprocess.Popen([sys.executable, str(HERE / "agent.py"), "--id", i, "--port", pt, "--peer", f"127.0.0.1:{pp}",
+                                      "--web", w, "--config", str(tmp)], stdout=subprocess.DEVNULL)
+                    for i, pt, pp, w in (("robot", "9100", "9101", "8100"), ("human", "9101", "9100", "8101"))]
+        time.sleep(1.5)
+        post(R, "/miss", {"slot": 1})
+        post(R, "/order", {"slots": "1"})
+        ok &= wait(lambda: state(H)["countdown"] > 1 and state(H)["my_picks"] == [], 1.5, "countdown shown, slot 1 is the robot's")
+        ok &= wait(lambda: state(R)["my_next"] is None, 0.5, "robot waits during the countdown")
+        ok &= wait(lambda: any("trying again" in l for l in state(R)["log"]), 8, "robot retries after first miss")
+        ok &= wait(lambda: state(H)["handoff"] == [1], 6, "after second miss the human is prompted for slot 1")
+        ok &= wait(lambda: all(r["status"] == "done" and r["owner"] == "human" for r in state(H)["rows"]), 15, "human collects it")
     finally:
         for p in procs:
             p.terminate()

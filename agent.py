@@ -44,8 +44,12 @@ class FakeRobot:
     def __init__(self):
         self.arm_ok = True
         self.fail_now = False
+        self.miss_slots = set()   # (sim) slots where the gripper will close on nothing
 
     def execute(self, slot, should_pause, should_abort):
+        if slot in self.miss_slots:
+            time.sleep(1.0)
+            return "missed"
         dur, t = random.uniform(4.0, 6.0), 0.0
         while t < dur:
             if self.fail_now:
@@ -141,11 +145,11 @@ class Agent:
     def reg(self, pid):
         return self.picks.get(pid, DEFAULT_REG)
 
-    def write(self, pid, status, owner):
+    def write(self, pid, status, owner, **extra):
         if self.reg(pid)["status"] in FINAL:
             return
         self.clock += 1
-        self.picks[pid] = {"status": status, "owner": owner, "clock": self.clock, "w": self.me}
+        self.picks[pid] = {"status": status, "owner": owner, "clock": self.clock, "w": self.me, **extra}
 
     def slot_of(self, pid):
         return int(pid.rsplit(":", 1)[1])
@@ -307,8 +311,12 @@ class Agent:
             weight = self.weight_of(pid)
             among = orders[pid.rsplit(":", 1)[0]]["among"]
             cands, excluded = [], []
+            skip = r.get("skip", [])
             for a, ag in c["agents"].items():
                 x = v[a]
+                if a in skip:
+                    excluded.append(f"{a} missed it twice")
+                    continue
                 if not x["alive"]:
                     excluded.append(f"{a} down")
                     continue
@@ -328,7 +336,8 @@ class Agent:
             if not cands:
                 assign[pid] = None
                 heavy = weight > c["human_max_weight"]
-                reasons[pid] = f"blocked: weight {weight} needs a robot" if heavy else "blocked: no agent available"
+                reasons[pid] = (("blocked: robot missed it twice: reposition it, then press Retry robot" if skip else
+                                 f"blocked: weight {weight} needs a robot") if heavy else "blocked: no agent available")
                 continue
             costs = {a: self.cost(a, slot, queue, weight) for a in cands}
             best = min(cands, key=lambda a: (costs[a], KIND_RANK[c["agents"][a]["kind"]], a))
@@ -367,12 +376,16 @@ class Agent:
 
         if self.busy_pid is None and self.available and getattr(self.ex, "arm_ok", True):
             sign = 1 if self.kind == "human" else -1   # human: lightest first, robot: heaviest first
-            mine = sorted(self.ordered_pids(), key=lambda p: sign * self.weight_of(p))
+            now = time.time()
+            mine = sorted(self.ordered_pids(), key=lambda p: (not self.reg(p).get("skip"), sign * self.weight_of(p)))
             for pid in mine:
+                if self.orders[pid.rsplit(":", 1)[0]].get("start_at", 0) > now:
+                    continue   # countdown: let the human read their picks first
                 if self.last_assign.get(pid) == self.me:
                     self.my_reason[pid] = self.last_why.get(pid, "")
                     self.claim_t[pid] = time.time()
-                    self.write(pid, "claimed", self.me)
+                    skip = self.reg(pid).get("skip")
+                    self.write(pid, "claimed", self.me, **({"skip": skip} if skip else {}))
                     self.busy_pid = pid
                     self.target_slot = self.slot_of(pid)
                     self.abort_flag = False
@@ -411,11 +424,19 @@ class Agent:
             paused_logged[0] = p
             return p
 
-        try:
-            res = self.ex.execute(slot, pause_cb, self.should_abort)
-        except Exception as e:  # serial errors, power pulled, etc.
-            res = "failed"
-            self.say(f"arm error: {e}")
+        res = "failed"
+        for attempt in (1, 2):
+            try:
+                res = self.ex.execute(slot, pause_cb, self.should_abort)
+            except Exception as e:  # serial errors, power pulled, etc.
+                res = "failed"
+                self.say(f"arm error: {e}")
+            if res != "missed":
+                break
+            if attempt == 1:
+                self.say(f"gripper closed on nothing at slot {slot} - trying again")
+            if self.abort_flag:
+                break
         with self.lock:
             if res == "ok":
                 self.write(pid, "done", self.me)
@@ -424,6 +445,9 @@ class Agent:
             elif res == "empty":
                 self.write(pid, "missing", self.me)
                 self.say(f"slot {slot} was empty")
+            elif res == "missed":
+                self.write(pid, "pending", None, skip=[self.me])
+                self.say(f"missed slot {slot} twice - back home, handing it to the human")
             elif res == "failed":
                 self.available = False
                 if self.reg(pid)["owner"] == self.me:
@@ -521,7 +545,8 @@ class Agent:
         self.clock += 1
         self.order_counter += 1
         oid = f"{self.me}{self.epoch}-{self.order_counter}"
-        order = {"id": oid, "slots": slots, "seq": self.clock, "among": among, "by": self.me}
+        order = {"id": oid, "slots": slots, "seq": self.clock, "among": among, "by": self.me,
+                 "start_at": time.time() + float(self.cfg.get("start_delay_s", 0))}
         if self.cfg.get("random_weights"):
             lo, hi = self.cfg.get("weight_range", [1, 10])
             order["weights"] = {str(s): random.randint(lo, hi) for s in slots}
@@ -548,7 +573,7 @@ class Agent:
                 "pid": pid, "slot": slot, "weight": self.weight_of(pid),
                 "status": r["status"], "owner": r["owner"], "by": r["w"],
                 "assigned": self.last_assign.get(pid), "reason": self.last_reasons.get(pid),
-                "why": self.last_why.get(pid),
+                "why": self.last_why.get(pid), "skip": r.get("skip", []),
             })
         my_next = None
         if self.busy_pid:
@@ -563,6 +588,12 @@ class Agent:
             "human_max_weight": self.cfg["human_max_weight"],
             "slots": sorted(int(s) for s in self.cfg["slots"]),
             "danger": self.danger, "robot_target": self.robot_target,
+            "countdown": max([0.0] + [o.get("start_at", 0) - time.time() for o in self.orders.values()]),
+            "my_picks": [{"slot": self.slot_of(p), "weight": self.weight_of(p)} for p in
+                         sorted(self.ordered_pids(), key=lambda p: self.weight_of(p) * (1 if self.kind == "human" else -1))
+                         if self.last_assign.get(p) == self.me and self.reg(p)["status"] not in FINAL],
+            "handoff": [self.slot_of(p) for p in self.ordered_pids()
+                        if self.reg(p).get("skip") and self.reg(p)["status"] not in FINAL],
             "learned": {a: {"cycle": round(self.cycle_of(a), 1),
                             "n": self.n_picks if a == self.me else (self.peer_status.get(a, {}).get("status", {}).get("n", 0))}
                         for a in self.cfg["agents"]},
@@ -602,6 +633,16 @@ class Agent:
                 return "ok"
             if path == "/touch":  # manual 'I took slot N' button for the human
                 self.human_touched(int(body["slot"]))
+                return "ok"
+            if path == "/retry":  # clear 'robot missed it' so the robot tries again
+                pid = body.get("pid")
+                if pid in self.picks and self.reg(pid)["status"] not in FINAL:
+                    self.write(pid, "pending", None)
+                    self.say(f"retry: slot {self.slot_of(pid)} open to the robot again")
+                return "ok"
+            if path == "/miss":   # fake robot: simulate empty grasps on a slot
+                if hasattr(self.ex, "miss_slots"):
+                    self.ex.miss_slots.add(int(body["slot"]))
                 return "ok"
             if path == "/fail":   # fake robot: simulate pulling power
                 if hasattr(self.ex, "fail_now"):
