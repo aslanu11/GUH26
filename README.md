@@ -4,8 +4,8 @@
 
 A mini Amazon pick station run by **two independent agents with no central controller**:
 
-- **Robot agent** (Kazy's laptop): the SO-101 follower picks objects with its gripper, fully autonomously (taught picks replayed when the agent decides). It has its wrist camera.
-- **Human agent** (Aslan's laptop): a real person (Ruslan in the demo) picks with **their own hand**. The **overhead camera** (plugged into Aslan's laptop) tracks the hand with MediaPipe and knows which slot it's in. A hand resting in a slot, then leaving, counts as a pick. The leader arm isn't used (`human_leader.py` stays as a fallback).
+- **Robot agent**: the SO-101 follower picks objects with its gripper, fully autonomously (taught picks replayed when the agent decides). It has its wrist camera.
+- **Human agent**: a real person (Ruslan in the demo) picks with **their own hand**. The **overhead camera** (plugged into Aslan's laptop) tracks the hand with MediaPipe and knows which slot it's in. A hand resting in a slot, then leaving, counts as a pick. The leader arm isn't used (`human_leader.py` stays as a fallback).
 
 Each object sits in a numbered slot and carries a **post-it weight label from 1 (light) to 5 (heavy)**. Both agents run the **same rule** (distance + weight + queue) on their own copy of the order board, so they agree who picks what without negotiating. **Labels above 3 are robot-only**, for human safety.
 
@@ -97,8 +97,8 @@ Type orders like `1,2,3,4,5` on either one. Use **Reset run** after restocking t
 | Time | Milestone |
 |---|---|
 | 1:45 | Layout taped down (Tanish) |
-| 2:15 | Follower replays one pick (Kazy) · both agents talking on Kazy's laptop (Aslan) |
-| 2:30 | Hand zones working on Kazy's laptop (Ruslan + Tanish) |
+| 2:15 | Follower replays one pick (Kazy) · both agents talking on Aslan's laptop |
+| 2:30 | Hand zones working on Aslan's laptop (done) |
 | 3:30 | Full run on real hardware |
 | 4:00 | Tier 2 (camera) only if everything above works |
 | **4:45** | **Freeze.** Three full runs, film the best one (Ayman) |
