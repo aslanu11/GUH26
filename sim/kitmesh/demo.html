@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dum-E &amp; U Packing Cell</title>
+<style>
+  :root {
+    --bg: #f4f2ee; --panel: #ffffff; --ink: #1d1b18; --muted: #6b665e; --line: #e2ddd4;
+    --a: #b8432f; --b: #2f5ca8; --ok: #1f7a4a; --ok-bg: #e2f2e8; --bad: #a33a22; --bad-bg: #f8e3dc;
+    --warn: #8a5a00; --warn-bg: #fbf0d0; --chip: #efebe3; --table: #dcd8cf; --carton: #b48a5a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151413; --panel: #1f1d1b; --ink: #ece8e1; --muted: #a39d93; --line: #34312d;
+      --ok-bg: #173826; --bad-bg: #42201a; --warn: #e3b34a; --warn-bg: #3d3216; --chip: #2b2825; --table: #2c2a27; --carton: #8f6c45;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  header { padding: 18px 24px 8px; display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: baseline; justify-content: space-between; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin-top: 2px; max-width: 760px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 4px 10px; font-size: 12.5px; white-space: nowrap; }
+  .chip.ok { background: var(--ok-bg); color: var(--ok); } .chip.bad { background: var(--bad-bg); color: var(--bad); } .chip.warn { background: var(--warn-bg); color: var(--warn); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: currentColor; vertical-align: 1px; }
+  .controls { padding: 4px 24px 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .controls .sep { width: 1px; height: 26px; background: var(--line); margin: 0 4px; }
+  main { padding: 0 24px 28px; display: grid; gap: 16px; grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-width: 0; }
+  .panel h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+  .video img { width: 100%; display: block; border-radius: 8px; background: #000; aspect-ratio: 16 / 10; object-fit: contain; cursor: grab; touch-action: none; user-select: none; }
+  .video img.dragging { cursor: grabbing; }
+  .note { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+  svg { width: 100%; height: auto; display: block; }
+  .robots { grid-column: 1 / -1; display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+  .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .head h3 { margin: 0; font-size: 17px; }
+  .bar { width: 4px; height: 18px; border-radius: 2px; display: inline-block; margin-right: 8px; vertical-align: -3px; }
+  button { font: inherit; border-radius: 8px; padding: 7px 13px; cursor: pointer; border: 1px solid var(--line); background: var(--chip); color: var(--ink); }
+  button.go { background: var(--ok); color: #fff; border: 0; }
+  button.danger { background: var(--bad); color: #fff; border: 0; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .sec { margin-top: 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .parcels { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .pc { border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 12.5px; min-width: 92px; }
+  .pc b { display: block; }
+  .pc .s { color: var(--muted); font-size: 11.5px; }
+  .pc.packed { border-color: var(--ok); } .pc.review, .pc.blocked { border-color: var(--bad); } .pc.active { border-color: var(--warn); box-shadow: 0 0 0 2px var(--warn-bg); }
+  .watch { margin-top: 6px; padding: 10px; border-radius: 8px; background: var(--chip); }
+  .watch.stopped { background: var(--bad-bg); }
+  .meter { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 6px; }
+  .meter i { display: block; height: 100%; background: var(--warn); }
+  .watch.stopped .meter i { background: var(--bad); }
+  .events { max-height: 180px; overflow: auto; margin-top: 6px; }
+  .events div { padding: 4px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+  .events .t { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+  .events .peer_stopped { color: var(--bad); font-weight: 600; } .events .packed { color: var(--ok); } .events .fault, .events .review { color: var(--bad); }
+  .log div { padding: 5px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+  .log .v { color: var(--ok); } .log .r { color: var(--bad); }
+  .error { color: var(--bad); font-size: 12.5px; min-height: 1em; padding: 0 24px; }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; padding: 0 16px 24px; } .robots { grid-template-columns: 1fr; } header, .controls { padding-left: 16px; padding-right: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Dum-E &amp; U packing cell</h1>
+    <div class="sub">Two simulated UFactory UF850 robots pack parcels at the same time. They share no messages and no records: each one only watches the table. If one stops, the other notices that its lane stopped emptying and takes over.</div>
+  </div>
+  <div class="chips" id="chips"><span class="chip">Connecting…</span></div>
+</header>
+<div class="controls">
+  <button class="go" id="start">Start job</button>
+  <span class="sep"></span>
+  <b>Dum-E:</b>
+  <button class="danger" data-crash="station-a" title="Freeze Dum-E's software. Its arm finishes the move it was given, then stops getting work.">Crash software</button>
+  <button class="danger" data-fault="station-a" title="Dum-E's arm stops where it is and its suction turns off.">Fault arm</button>
+  <button data-recover="station-a">Recover</button>
+  <span class="sep"></span>
+  <b>U:</b>
+  <button class="danger" data-crash="station-b" title="Freeze U's software.">Crash software</button>
+  <button class="danger" data-fault="station-b" title="U's arm stops where it is and its suction turns off.">Fault arm</button>
+  <button data-recover="station-b">Recover</button>
+  <span class="sep"></span>
+  <button id="reset">Reset scene</button>
+</div>
+<div class="error" id="error"></div>
+<main>
+  <section class="panel video">
+    <h2>Isaac Sim (live) — drag to orbit · scroll to zoom · Shift-drag to pan</h2>
+    <img id="live" alt="Live capture of the Isaac Sim window" src="/stream.mjpg" draggable="false">
+    <div class="controls" style="padding:10px 0 0">
+      <button data-view="overview">Overview</button>
+      <button data-view="a">Dum-E</button>
+      <button data-view="b">U</button>
+      <button data-view="top">Top</button>
+    </div>
+    <div class="note" id="stream-note"></div>
+  </section>
+  <section class="panel">
+    <h2>Table, top view (from physics)</h2>
+    <svg id="map" viewBox="0 0 460 430" role="img" aria-label="Top view of both robots, the parcel row and the cartons"></svg>
+    <h2 style="margin-top:14px">Simulator log</h2>
+    <div class="log" id="log"></div>
+  </section>
+  <div class="robots" id="robots"></div>
+</main>
+<script>
+let L = null;
+const COL = {"station-a": "var(--a)", "station-b": "var(--b)"};
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const rgb = c => `rgb(${c.map(v => Math.round(v * 255)).join(",")})`;
+
+async function post(url, body) {
+  document.getElementById("error").textContent = "";
+  try {
+    const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+    const d = await r.json();
+    if (!r.ok || d.ok === false) document.getElementById("error").textContent = d.error || d.reason || "Request failed";
+    return d;
+  } catch (e) { document.getElementById("error").textContent = String(e); }
+}
+
+function buildRobots() {
+  document.getElementById("robots").innerHTML = Object.entries(L.robots).map(([id, r]) => `
+    <section class="panel" id="card-${id}">
+      <div class="head"><h3><span class="bar" style="background:${COL[id]}"></span>${r.label} <span class="note">· packs into carton ${r.carton}</span></h3><span class="chip" id="state-${id}">…</span></div>
+      <div class="sec">My lane</div><div class="parcels" id="own-${id}"></div>
+      <div class="sec">Watching the other lane (by observation only)</div><div class="watch" id="watch-${id}"></div>
+      <div class="parcels" id="other-${id}"></div>
+      <div class="sec">What this robot noticed and did</div><div class="events" id="events-${id}"></div>
+    </section>`).join("");
+}
+
+const LABEL = {packed: "packed", gone: "already gone", review: "needs review", blocked: "waiting: stopped arm too close"};
+function parcelCard(p, current) {
+  const seen = p.seen === "mark" ? "on its mark" : p.seen.startsWith("carton:") ? "in carton " + p.seen.slice(7) : p.seen === "elsewhere" ? "off its mark" : p.seen;
+  const cls = current === p.parcel ? "active" : (p.outcome || "");
+  const status = current === p.parcel ? "picking now" : p.outcome ? LABEL[p.outcome] || p.outcome : seen;
+  return `<div class="pc ${cls}" title="${esc(p.detail)}"><b>${p.parcel}</b><span class="s">${esc(status)}${p.outcome && p.outcome !== "packed" ? "" : p.outcome ? "" : ""}</span></div>`;
+}
+
+function drawMap(sim) {
+  const X0 = -0.78, X1 = 0.78, Y0 = -1.22, Y1 = 0.24, W = 460, H = 430;
+  const sx = x => (x - X0) / (X1 - X0) * W, sy = y => (Y1 - y) / (Y1 - Y0) * H, s = W / (X1 - X0);
+  let g = `<rect x="0" y="0" width="${W}" height="${H}" rx="10" fill="var(--table)"/>`;
+  for (const [cid, c] of Object.entries(L.cartons)) {
+    g += `<rect x="${sx(c.center[0] - c.inner[0] / 2)}" y="${sy(c.center[1] + c.inner[1] / 2)}" width="${c.inner[0] * s}" height="${c.inner[1] * s}" fill="none" stroke="var(--carton)" stroke-width="4" rx="2"/>`;
+    g += `<text x="${sx(c.center[0])}" y="${sy(c.center[1] - c.inner[1] / 2) + 16}" text-anchor="middle" font-size="11" fill="var(--muted)">carton ${cid}</text>`;
+  }
+  const [pw, pd] = L.parcel_size;
+  for (const [pid, p] of Object.entries(L.parcels)) {
+    g += `<rect x="${sx(p.xy[0] - pw / 2)}" y="${sy(p.xy[1] + pd / 2)}" width="${pw * s}" height="${pd * s}" fill="none" stroke="${rgb(p.color)}" stroke-dasharray="3 3"/>`;
+    g += `<text x="${sx(p.xy[0])}" y="${sy(p.xy[1] - pd / 2) + 13}" text-anchor="middle" font-size="10" fill="var(--muted)">${pid}</text>`;
+  }
+  for (const [id, r] of Object.entries(L.robots)) {
+    const arm = sim && sim.arms ? sim.arms[id] : null;
+    g += `<circle cx="${sx(r.base[0])}" cy="${sy(r.base[1])}" r="17" fill="${COL[id]}"/><text x="${sx(r.base[0])}" y="${sy(r.base[1]) + 5}" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">${id === "station-a" ? "D" : "U"}</text>`;
+    if (arm && arm.tip) {
+      g += `<line x1="${sx(r.base[0])}" y1="${sy(r.base[1])}" x2="${sx(arm.tip[0])}" y2="${sy(arm.tip[1])}" stroke="${COL[id]}" stroke-width="5" stroke-linecap="round" opacity="0.55"/>`;
+      g += `<circle cx="${sx(arm.tip[0])}" cy="${sy(arm.tip[1])}" r="6" fill="${arm.suction === 1 ? "var(--ink)" : "none"}" stroke="${COL[id]}" stroke-width="2.5"/>`;
+      if (arm.faulted) g += `<text x="${sx(r.base[0]) + 26}" y="${sy(r.base[1]) + 5}" font-size="12" font-weight="700" fill="var(--bad)">FAILED</text>`;
+    }
+  }
+  for (const [pid, p] of Object.entries((sim && sim.parcels) || {})) {
+    const [x, y, z] = p.position, lifted = z > 0.06;
+    g += `<rect x="${sx(x - pw / 2)}" y="${sy(y + pd / 2)}" width="${pw * s}" height="${pd * s}" rx="2" fill="${rgb(L.parcels[pid].color)}" ${lifted ? 'stroke="var(--ink)" stroke-width="2"' : ""}/>`;
+  }
+  document.getElementById("map").innerHTML = g;
+}
+
+function render(d) {
+  const sim = d.sim || {};
+  const simUp = sim.name === "isaac-sim" && sim.ready;
+  const chips = [`<span class="chip ${simUp ? "ok" : "bad"}"><span class="dot"></span>${simUp ? "Isaac Sim running" : "Isaac Sim not reachable"}</span>`];
+  for (const [id, a] of Object.entries(d.agents)) {
+    const arm = sim.arms ? sim.arms[id] : null;
+    const label = L.robots[id].label;
+    if (a.frozen) chips.push(`<span class="chip bad"><span class="dot"></span>${label} software crashed</span>`);
+    else if (a.offline) chips.push(`<span class="chip bad"><span class="dot"></span>${label} agent offline</span>`);
+    else if (arm && arm.faulted) chips.push(`<span class="chip bad"><span class="dot"></span>${label} failed</span>`);
+    else chips.push(`<span class="chip ${a.state === "running" ? "ok" : ""}"><span class="dot"></span>${label} ${esc(a.state)}</span>`);
+  }
+  chips.push(`<span class="chip"><span class="dot"></span>No link between the robots</span>`);
+  document.getElementById("chips").innerHTML = chips.join("");
+  const anyBusy = Object.values(sim.arms || {}).some(a => a.busy);
+  document.getElementById("reset").disabled = !simUp || anyBusy;
+  document.getElementById("start").disabled = !simUp || Object.values(d.agents).some(a => a.state === "running");
+  const failed = id => (d.frozen || []).includes(id) || !!(sim.arms && sim.arms[id] && sim.arms[id].faulted);
+  document.querySelectorAll("[data-fault]").forEach(b => b.disabled = !simUp || failed(b.dataset.fault));
+  document.querySelectorAll("[data-crash]").forEach(b => b.disabled = !simUp || failed(b.dataset.crash));
+  document.querySelectorAll("[data-recover]").forEach(b => b.disabled = !simUp || !failed(b.dataset.recover));
+  document.getElementById("stream-note").textContent = (d.stream || "") + " · camera moves go to the Isaac Sim viewport itself.";
+
+  for (const [id, a] of Object.entries(d.agents)) {
+    const chip = document.getElementById(`state-${id}`);
+    if (a.offline) {
+      chip.textContent = a.frozen ? "SOFTWARE CRASHED (frozen by operator) — not responding" : "agent offline";
+      chip.className = "chip bad";
+      continue;
+    }
+    const arm = sim.arms ? sim.arms[id] : null;
+    chip.textContent = arm && arm.faulted ? "FAILED (operator fault)" : a.current ? `${a.state} · picking ${a.current}` : a.state;
+    chip.className = "chip " + (arm && arm.faulted ? "bad" : a.state === "running" ? "ok" : a.state === "done" ? "ok" : "");
+    const own = a.parcels.filter(p => p.lane === "mine"), oth = a.parcels.filter(p => p.lane === "other");
+    document.getElementById(`own-${id}`).innerHTML = own.map(p => parcelCard(p, a.current)).join("");
+    document.getElementById(`other-${id}`).innerHTML = oth.map(p => parcelCard(p, a.current)).join("");
+    const w = a.watch, peer = L.robots[w.robot].label;
+    const frac = w.on_marks > 0 ? Math.min(1, w.since_change_s / w.stall_after_s) : 0;
+    const box = document.getElementById(`watch-${id}`);
+    box.className = "watch" + (w.appears_stopped ? " stopped" : "");
+    box.innerHTML = w.on_marks === null ? "Not watching yet." :
+      `<b>${w.appears_stopped ? `${peer} appears stopped — taking over its lane` : w.on_marks === 0 ? `${peer}'s lane is empty` : `${peer} looks active`}</b><br>
+       ${w.on_marks} parcel(s) still on ${peer}'s marks · last change ${w.since_change_s.toFixed(0)} s ago · presumed stopped after ${w.stall_after_s.toFixed(0)} s with no change
+       <div class="meter"><i style="width:${(frac * 100).toFixed(0)}%"></i></div>`;
+    document.getElementById(`events-${id}`).innerHTML = a.events.slice().reverse().map(e => `<div class="${e.kind}"><span class="t">${e.t.toFixed(0)} s</span>${esc(e.note)}</div>`).join("") || `<div class="note">Press Start job.</div>`;
+  }
+  document.getElementById("log").innerHTML = (d.log || []).slice().reverse().map(r => r.kind === "result"
+    ? `<div class="${r.verified ? "v" : "r"}">${r.verified ? "✓" : "✗"} ${esc(L.robots[r.arm] ? L.robots[r.arm].label : r.arm)}: ${esc(r.reason)}</div>`
+    : `<div class="${r.kind === "fault" ? "r" : ""}">${esc(r.kind.replace("_", " "))}: ${esc(r.reason)}</div>`).join("") || `<div class="note">Nothing yet.</div>`;
+  drawMap(sim);
+}
+
+document.getElementById("start").onclick = () => post("/api/job/start");
+document.getElementById("reset").onclick = () => post("/api/reset");
+document.querySelectorAll("[data-fault]").forEach(b => b.onclick = () => post("/api/fault", {robot: b.dataset.fault}));
+document.querySelectorAll("[data-crash]").forEach(b => b.onclick = () => post("/api/crash", {robot: b.dataset.crash}));
+document.querySelectorAll("[data-recover]").forEach(b => b.onclick = () => post("/api/recover", {robot: b.dataset.recover}));
+
+// Orbit camera: target + distance/yaw/pitch, sent to the Isaac viewport.
+const VIEWS = {
+  overview: {target: [0.0, -0.45, 0.10], dist: 2.32, yaw: -40, pitch: 29.7},
+  a: {target: [-0.15, -0.25, 0.15], dist: 1.35, yaw: -55, pitch: 34},
+  b: {target: [0.15, -0.65, 0.15], dist: 1.35, yaw: -25, pitch: 34},
+  top: {target: [0.0, -0.45, 0.0], dist: 2.4, yaw: -90, pitch: 84},
+};
+const cam = JSON.parse(JSON.stringify(VIEWS.overview));
+let camDirty = false, camSending = false;
+const rad = v => v * Math.PI / 180;
+const eyeOf = c => { const p = rad(c.pitch), y = rad(c.yaw); return [c.target[0] + c.dist * Math.cos(p) * Math.cos(y), c.target[1] + c.dist * Math.cos(p) * Math.sin(y), c.target[2] + c.dist * Math.sin(p)]; };
+async function pushCamera() {
+  if (camSending || !camDirty) return;
+  camSending = true; camDirty = false;
+  try { await fetch("/api/camera", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({eye: eyeOf(cam).map(v => +v.toFixed(4)), target: cam.target.map(v => +v.toFixed(4))})}); } catch (e) {}
+  camSending = false;
+}
+setInterval(pushCamera, 60);
+const live = document.getElementById("live");
+let drag = null;
+live.addEventListener("pointerdown", e => { drag = {x: e.clientX, y: e.clientY, pan: e.shiftKey}; live.setPointerCapture(e.pointerId); live.classList.add("dragging"); e.preventDefault(); });
+live.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan || e.shiftKey) {
+    const y = rad(cam.yaw), k = cam.dist * 0.0018;
+    cam.target[0] += (dx * Math.sin(y) - dy * Math.cos(y)) * k;
+    cam.target[1] += (-dx * Math.cos(y) - dy * Math.sin(y)) * k;
+  } else { cam.yaw -= dx * 0.35; cam.pitch = Math.max(4, Math.min(86, cam.pitch + dy * 0.3)); }
+  camDirty = true;
+});
+const endDrag = () => { drag = null; live.classList.remove("dragging"); };
+live.addEventListener("pointerup", endDrag); live.addEventListener("pointercancel", endDrag);
+live.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.max(0.35, Math.min(6, cam.dist * Math.exp(e.deltaY * 0.0015))); camDirty = true; }, {passive: false});
+document.querySelectorAll("button[data-view]").forEach(b => b.onclick = () => { Object.assign(cam, JSON.parse(JSON.stringify(VIEWS[b.dataset.view]))); camDirty = true; });
+
+(async function start() {
+  L = await (await fetch("/api/layout")).json();
+  buildRobots();
+  async function tick() {
+    try { render(await (await fetch("/api/state")).json()); }
+    catch (e) { document.getElementById("chips").innerHTML = `<span class="chip bad"><span class="dot"></span>Demo server not reachable</span>`; }
+    setTimeout(tick, 600);
+  }
+  tick();
+  live.onerror = () => setTimeout(() => { live.src = "/stream.mjpg?" + Date.now(); }, 2000);
+})();
+</script>
+</body>
+</html>
