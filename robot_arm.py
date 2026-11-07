@@ -35,7 +35,8 @@ MIN_SEGMENT_S = 0.4
 GRASP_SQUEEZE = 100     # extra ticks past contact so the grasp actually holds
 GRASP_DWELL_S = 0.4
 RELEASE_TICKS = 300   # opening the gripper more than this after a grasp = release
-EMPTY_GRASP_TICKS = 35  # gripper got within this of its squeeze target = it closed on nothing (tune!)
+EMPTY_GRASP_TICKS = 165  # measured on our gripper: empty stops ~114 short of target, a paper ball ~245.
+                         # 165 leaves ~50 margin for noise and ~80 for smaller balls. Below = closed on nothing.
 HZ = 50
 
 
