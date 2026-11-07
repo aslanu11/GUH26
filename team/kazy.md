@@ -1,5 +1,5 @@
 # Kazy: robot arm (laptop 1)
-You own: `robot_arm.py`, `motions/`. Your laptop runs the ROBOT agent (follower + its wrist camera). The overhead camera goes to Aslan's laptop.
+You own: `robot_arm.py`, `motions/`. **Your laptop runs BOTH agents** (two terminals, see README "Run for real"). The follower and the overhead camera both plug into it. Run `pip install -r requirements.txt` to get mediapipe.
 
 ## Tasks, in order
 1. [ ] Note the follower's USB port, then **close MakerMods Lab** (it holds the port). `pip install -r requirements.txt`

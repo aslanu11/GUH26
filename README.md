@@ -37,15 +37,17 @@ Each agent sends its full state (orders, pick records, status) over UDP to its p
 
 The **interfaces between files** are written at the top of each file. Don't change an interface without telling its owner in Discord.
 
-## Which laptop does what
-| Laptop | Runs | Plugged in |
-|---|---|---|
-| **Kazy's** (Windows) | Robot agent | Follower arm (+ its wrist camera) |
-| **Aslan's** (Windows) | Human agent | Overhead camera (tracks the human's hand) |
-| **Tanish's** (Windows) | Spare / backup (later: a simulated 3rd agent) | none |
-| Ruslan's, Ayman's (MacBooks) | Editing, fake-mode tests, pitch | none |
+## Which laptop does what (ONE laptop for the demo)
+**Kazy's laptop runs both agents** as two separate processes in two terminals. The follower arm and the overhead camera are both plugged into it.
+The agents still share nothing but UDP messages on `127.0.0.1`: no shared memory, no shared files, no broker. Each one decides for itself.
 
-**Mac users:** everything works the same, but type `python3` / `pip3`. Arm ports look like `/dev/tty.usbmodemXXXX`. Ruslan and Tanish edit `human_hand.py`; Aslan pulls and runs it with the overhead camera plugged in.
+| Laptop | Use |
+|---|---|
+| **Kazy's** (Windows) | Robot agent + human agent, follower arm + overhead camera |
+| Aslan's, Tanish's (Windows) | Development, fake-mode testing, backup demo laptop |
+| Ruslan's, Ayman's (MacBooks) | Editing, fake-mode tests (`python3`), pitch |
+
+**Pitch framing:** "Each agent is an independent process with its own sensors and state. For the demo they share a laptop; in a warehouse each runs on its own device. The code is identical: only the peer IP changes."
 
 ## Setup (every laptop). Windows PowerShell: run ONE line at a time, no `&&`
 ```
@@ -56,30 +58,37 @@ python test_scenarios.py
 ```
 `test_scenarios.py` runs a fake robot + fake human and checks every demo moment, no hardware. It must print `ALL PASS`.
 
-## Run for real
-Kazy's and Aslan's laptops on the **same phone hotspot**. Find each laptop's IP (`ipconfig` / `ifconfig`). **Close MakerMods Lab first**: only one program can use an arm's port.
+## Run for real (Kazy's laptop, two terminals)
+**Close MakerMods Lab first**: only one program can use the arm's port. Run `pip install -r requirements.txt` once (adds mediapipe).
 
-**Kazy's laptop, robot agent:**
+One-time setup:
 ```
-python robot_arm.py ports                                   # find the follower's port
+python robot_arm.py ports                                   # follower port, e.g. COM5
 python robot_arm.py teach --port COM5 --name home           # once
 python robot_arm.py teach --port COM5 --name 1              # ...one per slot, 1-5
-python agent.py --id robot --port 9100 --peer <ASLAN_IP>:9101 --arm so101 --arm-port COM5
+python human_hand.py cams                                   # overhead camera index on THIS laptop
+python human_hand.py regions --cam 1                        # zone boxes (or git pull Aslan's regions.json if the camera hasn't moved)
+python human_hand.py watch --cam 1                          # check: red dot on fingertip, box turns green
 ```
-**Aslan's laptop, human agent (Ruslan's real hand):**
+**Terminal 1, robot agent:**
 ```
-python human_hand.py cams                                   # find the overhead camera index
-python human_hand.py regions --cam 1                        # draw a box over slots 1-5, tray, reject
-python human_hand.py watch --cam 1                          # check the hand dot + zone are right
-python agent.py --id human --port 9101 --peer <KAZY_IP>:9100 --arm hand --cam 1
+python agent.py --id robot --port 9100 --peer 127.0.0.1:9101 --web 8000 --arm so101 --arm-port COM5
 ```
-Open **http://localhost:8000** on each laptop and put them side by side. Each page shows what *that* agent believes. Type orders like `1,2,3,4,5` on either one. Use **Reset run** after restocking the slots.
+**Terminal 2, human agent:**
+```
+python agent.py --id human --port 9101 --peer 127.0.0.1:9100 --web 8001 --arm hand --cam 1
+```
+Robot page: **http://localhost:8000** · human page: **http://localhost:8001**. Put them side by side. Each shows what *that* agent believes.
+Type orders like `1,2,3,4,5` on either one. Use **Reset run** after restocking the slots.
 
-**Fake mode** (no hardware): leave out `--arm`. The robot pretends to pick and the human pretends to push. You can also run both agents on one laptop: give them different `--port` and `--web` values and use `127.0.0.1` as the peer.
+**Kill an agent in the demo:** close Terminal 1 (the robot's brain dies). Within about 6 s the human page shows the robot **down** and takes the light picks; heavy ones show "blocked: needs a robot". Re-run the Terminal 1 command and it rejoins and merges.
+
+**Fake mode** (no hardware): leave out `--arm`. Leave out `--arm so101 --arm-port` for a pretend robot, or `--arm hand --cam` for a pretend human.
+**Two-laptop mode** (optional): same commands, with the other laptop's IP as `--peer` instead of `127.0.0.1`.
 
 ## Rules (don't break these, the judges will check)
-- **Nothing central**: no single laptop running both arms, no MQTT broker, no cloud AI making decisions
-- **Each agent has its own sensors**: overhead camera → human laptop (tracks the hand); arm encoders + wrist camera → robot laptop
+- **Nothing central**: agents only talk via UDP messages: no shared memory or files, no MQTT broker, no cloud AI (no Dream-1 or LLM APIs) making decisions
+- **Each agent has its own sensors**: overhead camera → human agent only (tracks the hand); arm encoders + wrist camera → robot agent only
 - **Never move the taped layout after teaching**: the taught picks assume exact slot positions
 - **Foam under the follower before pulling its power**: it drops when power is cut
 
@@ -87,8 +96,8 @@ Open **http://localhost:8000** on each laptop and put them side by side. Each pa
 | Time | Milestone |
 |---|---|
 | 1:45 | Layout taped down (Tanish) |
-| 2:15 | Follower replays one pick (Kazy) · both agents talking over the hotspot (Aslan) |
-| 2:30 | Hand zones detected live on Aslan's laptop (Ruslan + Tanish) |
+| 2:15 | Follower replays one pick (Kazy) · both agents talking on Kazy's laptop (Aslan) |
+| 2:30 | Hand zones working on Kazy's laptop (Ruslan + Tanish) |
 | 3:30 | Full run on real hardware |
 | 4:00 | Tier 2 (camera) only if everything above works |
 | **4:45** | **Freeze.** Three full runs, film the best one (Ayman) |
